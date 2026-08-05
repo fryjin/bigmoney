@@ -1,0 +1,32 @@
+{
+  "name": "@town-board/web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vue-tsc --noEmit && vite build",
+    "typecheck": "vue-tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@town-board/design-tokens": "*",
+    "@town-board/game-content": "*",
+    "@town-board/game-core": "*",
+    "@town-board/game-flow": "*",
+    "@town-board/game-random": "*",
+    "@town-board/game-storage": "*",
+    "animejs": "4.5.0",
+    "phaser": "4.2.1",
+    "vue": "3.5.40",
+    "xstate": "5.32.5"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "6.0.8",
+    "typescript": "7.0.2",
+    "vite": "8.1.5",
+    "vite-plugin-pwa": "1.1.1",
+    "vitest": "4.1.10",
+    "vue-tsc": "3.3.8"
+  }
+}
