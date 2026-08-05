@@ -1,16 +1,17 @@
 {
-  "name": "@town-board/game-testkit",
-  "version": "0.1.0",
+  "name": "@bigmoney/game-testkit",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
-  "exports": "./src/index.ts",
-  "scripts": {
-    "typecheck": "tsc --noEmit -p tsconfig.json"
+  "exports": {
+    ".": "./src/index.ts"
   },
-  "devDependencies": {
-    "typescript": "7.0.2"
+  "types": "./src/index.ts",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
-    "@town-board/game-random": "*"
+    "@bigmoney/game-random": "*"
   }
 }

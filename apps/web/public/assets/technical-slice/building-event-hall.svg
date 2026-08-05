@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 280 280">
+  <defs><filter id="s"><feGaussianBlur stdDeviation="5"/></filter></defs>
+  <ellipse cx="140" cy="240" rx="88" ry="24" fill="#20343b" opacity=".16" filter="url(#s)"/>
+  <path d="M56 132 140 89 226 132 140 177Z" fill="#f6eee8"/>
+  <path d="M56 132 140 177v52L56 185Z" fill="#f1cfc4" stroke="#a67e73" stroke-width="2"/>
+  <path d="M140 177 226 132v53l-86 44Z" fill="#d8aaa0" stroke="#a67e73" stroke-width="2"/>
+  <path d="M70 116 140 80 212 116 140 154Z" fill="#f6f3e7" stroke="#7b8c8e" stroke-width="3"/>
+  <path d="M95 94 140 71 186 94 140 118Z" fill="#4c9c8a"/>
+  <circle cx="140" cy="81" r="18" fill="#fff7df" stroke="#6f8987" stroke-width="3"/>
+  <path d="m140 68 4 9 10 1-7 7 2 10-9-5-9 5 2-10-7-7 10-1Z" fill="#e5bd57"/>
+  <g fill="#f8f8f1" stroke="#8a9998" stroke-width="2">
+    <path d="M70 145 90 156v23l-20-11Z"/><path d="M99 161 119 172v23l-20-11Z"/>
+    <path d="M159 172 181 160v23l-22 12Z"/><path d="M190 155 211 144v23l-21 11Z"/>
+  </g>
+  <path d="M117 192 140 204 163 192v36l-23 12-23-12Z" fill="#526f76"/>
+  <path d="M46 172c16-10 23-4 31 8" fill="none" stroke="#5ca57a" stroke-width="8" stroke-linecap="round"/>
+  <path d="M216 172c-16-10-23-4-31 8" fill="none" stroke="#5ca57a" stroke-width="8" stroke-linecap="round"/>
+</svg>

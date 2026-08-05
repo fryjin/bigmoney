@@ -1,19 +1,30 @@
 {
-  "name": "town-board-game",
-  "version": "0.1.0",
+  "name": "bigmoney",
+  "version": "0.1.1",
   "private": true,
+  "type": "module",
   "workspaces": [
     "apps/*",
     "packages/*"
   ],
   "scripts": {
-    "dev": "npm run dev --workspace @town-board/web",
-    "build": "npm run build --workspace @town-board/web",
+    "dev": "npm run dev --workspace @bigmoney/web",
+    "build": "npm run build --workspace @bigmoney/web",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
-    "check": "npm run typecheck && npm run test"
+    "verify:structure": "node scripts/verify-structure.mjs",
+    "check": "npm run verify:structure && npm run typecheck && npm run test && npm run build"
   },
   "engines": {
-    "node": ">=22.0.0"
+    "node": ">=22.0.0",
+    "npm": ">=10.0.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "6.0.8",
+    "typescript": "7.0.2",
+    "vite": "8.1.5",
+    "vite-plugin-pwa": "1.1.1",
+    "vitest": "4.1.10",
+    "vue-tsc": "3.3.8"
   }
 }

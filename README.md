@@ -1,43 +1,67 @@
-# Town Board Game
+# Big Money
 
-面向 iPad 横屏的 2.5D 单机同屏大富翁游戏。代码托管于 GitHub，部署到 Cloudflare Pages。
+面向 iPad 横屏的 2.5D 本地多人回合制大富翁游戏。
+
+当前版本：**Phase 1.1 八节点技术切片**。
 
 ## 技术栈
 
-- Phaser 4.2.1：棋盘、镜头、棋子、建筑、小游戏
-- TypeScript：规则与应用代码
-- XState 5：回合、中断与恢复流程
-- Vue 3：HUD、上下文面板和阻断式决策
-- Anime.js：DOM UI 动效
-- Tiled：等距地图与锚点编排
-- IndexedDB：本地快照与事件日志
-- Vite PWA：离线缓存与主屏幕运行
+- Vite + TypeScript
+- Phaser 4：城市棋盘、棋子、骰子与场景动画
+- Vue 3：HUD、上下文面板与阻断式决策
+- XState 5：回合和中断流程
+- Anime.js：DOM 界面过渡
+- Zod：内容配置校验
+- IndexedDB：稳定节点快照与领域事件日志
 
-## 当前仓库状态
+## 本地启动
 
-这是开发启动骨架，包含模块边界、示例场景、技术切片配置、CI和综合开发说明。它不是完整游戏，也不代表最终美术质量。
-
-## 本地运行
+需要 Node.js 22+ 与 npm 10+。
 
 ```bash
 npm install
+npm run check
 npm run dev
 ```
 
-## 构建
+默认开发地址由 Vite 输出。生产构建目录为：
 
-```bash
-npm run build
+```text
+apps/web/dist
 ```
 
-Cloudflare Pages：
+## Phase 1.1 可玩范围
 
-- Build command：`npm run build`
-- Output directory：`apps/web/dist`
-- Node.js：22+
+- 两名玩家轮流行动；
+- 单枚六面骰；
+- 八节点闭环路径与逐格移动；
+- 经过股票市场时暂停、购买或跳过后继续移动；
+- 无主地产购买；
+- 自有地产落地升级一级；
+- 对手地产租金；
+- 随机事件；
+- 免费抽卡与满手“四选三”技术验证；
+- 大轮结束时股票倒计时和结算；
+- IndexedDB 本地快照。
 
-## 首个开发目标
+完整 36 格规则尚未全部接入。规则基线以 `docs/rules-baseline.md` 为准。
 
-完成 5～7 个工作日技术切片：8个路径节点、6栋正式质量建筑、2名玩家、一个地产、一个股票市场、一张卡片和一个事件。
+## 关键文档
 
-详细内容见 `docs/development-guide.md`。
+- `AGENTS.md`：开发边界与强制数据流
+- `docs/development-guide.md`：综合开发说明
+- `docs/design/ui-2.5d-visual-guidelines-v1.0.md`：视觉规范
+- `docs/development/phase-1.1-technical-slice.md`：本次实现说明
+- `docs/development/build-validation.md`：构建校验记录
+- `docs/technical-slice-acceptance.md`：验收基线
+
+## Cloudflare Pages
+
+建议配置：
+
+```text
+Root directory: /
+Build command: npm run build
+Build output directory: apps/web/dist
+Node version: 22
+```

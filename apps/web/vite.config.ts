@@ -6,24 +6,35 @@ export default defineConfig({
   plugins: [
     vue(),
     VitePWA({
-      registerType: 'prompt',
+      registerType: 'autoUpdate',
       manifest: {
-        name: '微缩小镇大富翁',
-        short_name: '微缩小镇',
+        name: 'Big Money',
+        short_name: 'Big Money',
+        description: '2.5D 本地多人回合制大富翁游戏',
         display: 'standalone',
         orientation: 'landscape',
-        background_color: '#DDEBE7',
-        theme_color: '#DDEBE7'
+        background_color: '#DCEBE6',
+        theme_color: '#22343A',
+        start_url: '/'
       },
       workbox: {
         navigateFallback: '/index.html',
-        globPatterns: ['**/*.{js,css,html,json,png,jpg,jpeg,webp,avif,svg,ogg,mp3,m4a}']
+        globPatterns: ['**/*.{js,css,html,svg,json,webp,png,woff2}']
       }
     })
   ],
+  server: {
+    host: true,
+    port: 4173
+  },
+  preview: {
+    host: true,
+    port: 4173
+  },
   build: {
     target: 'es2022',
     sourcemap: true,
-    chunkSizeWarningLimit: 1400
+    outDir: 'dist',
+    emptyOutDir: true
   }
 });

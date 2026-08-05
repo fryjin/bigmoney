@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 280 280">
+  <defs>
+    <linearGradient id="glass" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#9ed5df"/><stop offset="1" stop-color="#4e8798"/></linearGradient>
+    <filter id="s"><feGaussianBlur stdDeviation="5"/></filter>
+  </defs>
+  <ellipse cx="142" cy="239" rx="88" ry="24" fill="#20343b" opacity=".15" filter="url(#s)"/>
+  <path d="M65 94 144 54 220 94 143 135Z" fill="#dfe8e8"/>
+  <path d="M65 94 143 135v93L65 188Z" fill="#6fa8b7" stroke="#355d69" stroke-width="2"/>
+  <path d="M143 135 220 94v94l-77 40Z" fill="#4b7d8c" stroke="#355d69" stroke-width="2"/>
+  <path d="M78 97 144 64 207 97 143 130Z" fill="#eef4f2" stroke="#5d777e" stroke-width="2"/>
+  <path d="M91 80 144 53 197 80 143 108Z" fill="#4c9c8a" stroke="#2e6c60" stroke-width="3"/>
+  <g fill="url(#glass)" stroke="#d9eef2" stroke-width="1.5">
+    <path d="M77 115 96 125v23l-19-10Z"/><path d="M103 129 122 139v23l-19-10Z"/>
+    <path d="M77 151 96 161v23l-19-10Z"/><path d="M103 165 122 175v23l-19-10Z"/>
+    <path d="M158 140 178 129v23l-20 11Z"/><path d="M185 126 205 115v23l-20 11Z"/>
+    <path d="M158 176 178 165v23l-20 11Z"/><path d="M185 162 205 151v23l-20 11Z"/>
+  </g>
+  <path d="M109 202 143 220 177 202 143 184Z" fill="#22343a"/>
+  <path d="m100 104 43 22 43-22" fill="none" stroke="#e5bd57" stroke-width="5"/>
+  <g fill="none" stroke="#f8e8a3" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">
+    <path d="m111 94 12-10 12 5 15-19 18 9"/>
+    <path d="m166 79-1-10 10 4"/>
+  </g>
+  <rect x="116" y="40" width="56" height="18" rx="9" fill="#22343a"/>
+  <text x="144" y="53" text-anchor="middle" font-family="Arial,sans-serif" font-size="9" font-weight="700" fill="#fff">BIG MONEY</text>
+</svg>

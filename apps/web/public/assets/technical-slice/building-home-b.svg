@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 280 280">
+  <defs><filter id="s"><feGaussianBlur stdDeviation="5"/></filter></defs>
+  <ellipse cx="143" cy="242" rx="87" ry="24" fill="#20343b" opacity=".16" filter="url(#s)"/>
+  <path d="M70 106 145 68 218 105 144 144Z" fill="#e7efe9"/>
+  <path d="M70 106 144 144v86L70 191Z" fill="#e5e9e2" stroke="#7f9192" stroke-width="2"/>
+  <path d="M144 144 218 105v87l-74 38Z" fill="#c7d2cf" stroke="#7f9192" stroke-width="2"/>
+  <path d="M86 92 145 62 203 92 144 123Z" fill="#4f8fb8" stroke="#315e75" stroke-width="3"/>
+  <path d="M106 65 145 46 184 65 145 86Z" fill="#eef3ef" stroke="#6f8586" stroke-width="2"/>
+  <path d="M118 52 145 39 172 52 145 66Z" fill="#65ad9a"/>
+  <g fill="#aad7df" stroke="#f0f7f6" stroke-width="1.5">
+    <path d="M82 119 102 130v23l-20-11Z"/><path d="M110 134 130 145v23l-20-11Z"/>
+    <path d="M82 155 102 166v23l-20-11Z"/><path d="M110 170 130 181v23l-20-11Z"/>
+    <path d="M158 149 178 138v23l-20 11Z"/><path d="M187 134 207 123v23l-20 11Z"/>
+    <path d="M158 184 178 173v23l-20 11Z"/><path d="M187 169 207 158v23l-20 11Z"/>
+  </g>
+  <path d="M117 199 144 213v17l-27-14Z" fill="#385864"/>
+  <path d="M144 213 163 203v17l-19 10Z" fill="#2c4650"/>
+  <g fill="#e5bd57"><circle cx="96" cy="93" r="5"/><circle cx="194" cy="96" r="5"/><circle cx="145" cy="72" r="5"/></g>
+</svg>
