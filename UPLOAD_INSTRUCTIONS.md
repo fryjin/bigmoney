@@ -1,24 +1,40 @@
-# 上传说明
+# Phase 1.1 仓库激活补丁上传说明
 
-这是完整仓库内容包，不是仅包含新增文件的补丁。
+## 为什么需要这次补丁
 
-1. 先备份当前 `main`。
-2. 解压本压缩包。
-3. 将压缩包内部文件覆盖上传到仓库根目录。
-4. 删除旧文件：
-   - `apps/web/src/phaser/bridges/gameEvents.ts`
-5. 不要删除现有 `docs/design` 和 `assets/*/README.md`；本包已包含这些内容。
-6. 建议提交信息：
+GitHub网页批量上传时，操作系统可能隐藏以 `.` 开头的文件，导致 `.github`、`.gitignore`、`.editorconfig`、`.env.example` 没有进入仓库。
+
+## 推荐上传方式
+
+使用 GitHub Desktop 或本地 Git，将本补丁内容覆盖到仓库根目录后提交：
 
 ```text
-feat: normalize bigmoney workspace and add phase 1.1 technical slice
+chore: activate CI and repository configuration
 ```
 
-上传后在联网环境运行：
+## 仅使用GitHub网页时
 
-```bash
-npm install
-npm run check
-```
+通过 **Add file → Create new file** 分别创建：
 
-成功后将新生成的 `package-lock.json` 一并提交。
+- `.github/workflows/ci.yml`
+- `.gitignore`
+- `.editorconfig`
+- `.env.example`
+
+`manual-create/` 中提供了可复制的可见文本版本。
+
+随后覆盖上传：
+
+- `package.json`
+- `scripts/verify-repository.mjs`
+- `docs/development/repository-acceptance.md`
+- `docs/development/cloudflare-pages-setup.md`
+
+## 临时文件清理
+
+确认补丁提交后，可删除仓库根目录中的：
+
+- `FILES.txt`
+- `UPLOAD_INSTRUCTIONS.md`
+
+它们不是运行依赖。
