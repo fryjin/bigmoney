@@ -1,19 +1,17 @@
-# 上传说明：CI 修复 v0.1.4
+# Big Money CI Hotfix v0.1.5 上传说明
 
-将本目录内部内容覆盖上传到 GitHub 仓库根目录。
+将压缩包内部内容覆盖到仓库根目录。
 
 本次覆盖文件：
 
-```text
-package.json
-apps/web/tsconfig.json
-docs/development/ci-tsconfig-baseurl-hotfix-v0.1.4.md
-```
+- `package.json`
+- `apps/web/src/phaser/createGame.ts`
+- `docs/development/ci-phaser-gameconfig-hotfix-v0.1.5.md`
 
-建议提交信息：
+提交信息：
 
 ```text
-fix: remove deprecated TypeScript baseUrl option
+fix: remove unsupported Phaser 4 resolution config
 ```
 
-上传后等待 `Big Money CI` 自动运行。不要手动回退 TypeScript，也不要添加 `ignoreDeprecations`。
+上传后 GitHub Actions 会自动触发。不要手动重跑旧工作流；检查由新提交触发的最新一轮。

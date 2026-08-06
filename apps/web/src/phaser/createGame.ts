@@ -9,7 +9,6 @@ export function createTownGame(parent: HTMLElement): Phaser.Game {
     backgroundColor: '#DCEBE6',
     width: 1194,
     height: 834,
-    resolution: Math.min(window.devicePixelRatio || 1, 1.5),
     render: {
       antialias: true,
       roundPixels: true
