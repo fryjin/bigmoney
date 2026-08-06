@@ -1,40 +1,15 @@
-# Phase 1.1 仓库激活补丁上传说明
+# Big Money CI hotfix upload
 
-## 为什么需要这次补丁
-
-GitHub网页批量上传时，操作系统可能隐藏以 `.` 开头的文件，导致 `.github`、`.gitignore`、`.editorconfig`、`.env.example` 没有进入仓库。
-
-## 推荐上传方式
-
-使用 GitHub Desktop 或本地 Git，将本补丁内容覆盖到仓库根目录后提交：
+1. Open the `fryjin/bigmoney` repository on branch `main`.
+2. Use **Add file → Upload files**.
+3. Upload the contents inside this folder to the repository root.
+4. Confirm that `package.json` is replaced and the document is added under `docs/development/`.
+5. Commit message:
 
 ```text
-chore: activate CI and repository configuration
+fix: use published vite-plugin-pwa version
 ```
 
-## 仅使用GitHub网页时
+6. Open **Actions → Big Money CI** and wait for the new run.
 
-通过 **Add file → Create new file** 分别创建：
-
-- `.github/workflows/ci.yml`
-- `.gitignore`
-- `.editorconfig`
-- `.env.example`
-
-`manual-create/` 中提供了可复制的可见文本版本。
-
-随后覆盖上传：
-
-- `package.json`
-- `scripts/verify-repository.mjs`
-- `docs/development/repository-acceptance.md`
-- `docs/development/cloudflare-pages-setup.md`
-
-## 临时文件清理
-
-确认补丁提交后，可删除仓库根目录中的：
-
-- `FILES.txt`
-- `UPLOAD_INSTRUCTIONS.md`
-
-它们不是运行依赖。
+This patch does not change game logic or UI.
