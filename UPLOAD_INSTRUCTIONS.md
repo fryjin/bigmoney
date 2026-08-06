@@ -1,16 +1,19 @@
-# Big Money CI hotfix v0.1.3 upload
+# 上传说明：CI 修复 v0.1.4
 
-1. Open `fryjin/bigmoney` on branch `main`.
-2. Use **Add file → Upload files**.
-3. Upload the contents inside this folder to the repository root.
-4. Confirm that root `package.json` is replaced.
-5. Confirm that `docs/development/ci-typescript-compatibility-hotfix-v0.1.3.md` is added.
-6. Commit message:
+将本目录内部内容覆盖上传到 GitHub 仓库根目录。
+
+本次覆盖文件：
 
 ```text
-fix: pin TypeScript 6 for vue-tsc compatibility
+package.json
+apps/web/tsconfig.json
+docs/development/ci-tsconfig-baseurl-hotfix-v0.1.4.md
 ```
 
-7. Open **Actions → Big Money CI** and wait for the new run.
+建议提交信息：
 
-This patch changes only development-tool compatibility. It does not modify game logic or UI.
+```text
+fix: remove deprecated TypeScript baseUrl option
+```
+
+上传后等待 `Big Money CI` 自动运行。不要手动回退 TypeScript，也不要添加 `ignoreDeprecations`。
