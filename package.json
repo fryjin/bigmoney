@@ -1,6 +1,6 @@
 {
   "name": "bigmoney",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "private": true,
   "type": "module",
   "workspaces": [
@@ -22,7 +22,7 @@
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "6.0.8",
-    "typescript": "7.0.2",
+    "typescript": "6.0.3",
     "vite": "8.1.5",
     "vite-plugin-pwa": "1.3.0",
     "vitest": "4.1.10",
