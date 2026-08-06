@@ -1,4 +1,3 @@
-import Phaser from 'phaser';
 import type { GameState } from '@bigmoney/game-core';
 import type { PresentationCue } from '@bigmoney/game-flow';
 import {
@@ -9,7 +8,52 @@ import {
   type PresentationPreferences
 } from '../../presentation/preferences';
 
-const emitter = new Phaser.Events.EventEmitter();
+type EventHandler = (...args: any[]) => void;
+
+interface EventListener {
+  handler: EventHandler;
+  context?: unknown;
+  once: boolean;
+}
+
+class SceneEventBus {
+  private readonly listeners = new Map<string, EventListener[]>();
+
+  on(event: string, handler: EventHandler, context?: unknown): void {
+    const current = this.listeners.get(event) ?? [];
+    current.push({ handler, context, once: false });
+    this.listeners.set(event, current);
+  }
+
+  once(event: string, handler: EventHandler, context?: unknown): void {
+    const current = this.listeners.get(event) ?? [];
+    current.push({ handler, context, once: true });
+    this.listeners.set(event, current);
+  }
+
+  off(event: string, handler: EventHandler, context?: unknown): void {
+    const current = this.listeners.get(event);
+    if (!current) return;
+
+    const next = current.filter(
+      (listener) => listener.handler !== handler || listener.context !== context
+    );
+
+    if (next.length > 0) this.listeners.set(event, next);
+    else this.listeners.delete(event);
+  }
+
+  emit(event: string, ...args: any[]): void {
+    const current = [...(this.listeners.get(event) ?? [])];
+
+    for (const listener of current) {
+      listener.handler.apply(listener.context, args);
+      if (listener.once) this.off(event, listener.handler, listener.context);
+    }
+  }
+}
+
+const emitter = new SceneEventBus();
 let ready = false;
 let preferences = loadPresentationPreferences();
 
@@ -35,7 +79,7 @@ export function notifySceneShutdown(): void {
 }
 
 export function notifySceneLoadProgress(progress: number): void {
-  emitter.emit(SceneBridgeEvents.loadProgress, Phaser.Math.Clamp(progress, 0, 1));
+  emitter.emit(SceneBridgeEvents.loadProgress, Math.min(1, Math.max(0, progress)));
 }
 
 export function notifySceneLoadError(assetKey: string): void {

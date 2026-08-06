@@ -12,13 +12,16 @@ const requiredFiles = [
   'apps/web/src/ui/components/PresentationSettings.vue',
   'apps/web/src/presentation/preferences.ts',
   'apps/web/src/phaser/assets/visualAssetRegistry.ts',
+  'apps/web/src/runtime/buildInfo.ts',
+  'apps/web/src/runtime/runtimeHealth.ts',
   'apps/web/src/phaser/scenes/TownScene.ts',
   'packages/game-content/package.json',
   'packages/game-core/package.json',
   'packages/game-flow/package.json',
   'packages/game-random/package.json',
   'packages/game-storage/package.json',
-  'packages/design-tokens/package.json'
+  'packages/design-tokens/package.json',
+  'scripts/verify-dist.mjs'
 ];
 
 const failures = [];

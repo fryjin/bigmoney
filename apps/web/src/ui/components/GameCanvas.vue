@@ -1,8 +1,13 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref, watch } from 'vue';
-import type Phaser from 'phaser';
+import {
+  computed,
+  onBeforeUnmount,
+  onMounted,
+  ref,
+  watch
+} from 'vue';
+import type { Game } from 'phaser';
 import type { GameState } from '@bigmoney/game-core';
-import { createTownGame } from '../../phaser/createGame';
 import {
   offSceneLoadError,
   offSceneLoadProgress,
@@ -19,6 +24,11 @@ import {
   loadPresentationPreferences,
   type PresentationPreferences
 } from '../../presentation/preferences';
+import { BUILD_INFO } from '../../runtime/buildInfo';
+import {
+  collectRuntimeHealth,
+  type RuntimeHealth
+} from '../../runtime/runtimeHealth';
 import PresentationSettings from './PresentationSettings.vue';
 
 const props = defineProps<{
@@ -29,13 +39,25 @@ const host = ref<HTMLElement | null>(null);
 const sceneReady = ref(false);
 const loadProgress = ref(0);
 const failedAssets = ref<string[]>([]);
+const runtimeError = ref('');
 const settingsOpen = ref(false);
 const preferences = ref<PresentationPreferences>(loadPresentationPreferences());
-let game: Phaser.Game | null = null;
+const runtimeHealth = ref<RuntimeHealth | null>(null);
+let game: Game | null = null;
+let disposed = false;
+
+const loadingMessage = computed(() =>
+  runtimeError.value ? '小镇场景加载失败' : '正在装配微缩小镇'
+);
+
+function refreshRuntimeHealth(): void {
+  runtimeHealth.value = collectRuntimeHealth();
+}
 
 function handleSceneReady(): void {
   sceneReady.value = true;
   loadProgress.value = 1;
+  refreshRuntimeHealth();
   void syncSceneState(props.gameState);
 }
 
@@ -58,15 +80,34 @@ function updatePreferences(next: PresentationPreferences): void {
   updateScenePresentationPreferences(next);
 }
 
+async function mountTownScene(): Promise<void> {
+  if (!host.value) return;
+
+  try {
+    const { createTownGame } = await import('../../phaser/createGame');
+    if (disposed || !host.value) return;
+    game = createTownGame(host.value);
+    void syncSceneState(props.gameState);
+  } catch (error) {
+    runtimeError.value =
+      error instanceof Error ? error.message : '无法载入 Phaser 场景模块';
+    handleLoadError('scene-runtime');
+  }
+}
+
 onMounted(() => {
   onSceneReady(handleSceneReady);
   onSceneShutdown(handleSceneShutdown);
   onSceneLoadProgress(handleLoadProgress);
   onSceneLoadError(handleLoadError);
 
-  if (!host.value) return;
-  game = createTownGame(host.value);
-  void syncSceneState(props.gameState);
+  refreshRuntimeHealth();
+  window.addEventListener('online', refreshRuntimeHealth);
+  window.addEventListener('offline', refreshRuntimeHealth);
+  window.addEventListener('resize', refreshRuntimeHealth);
+  navigator.serviceWorker?.addEventListener('controllerchange', refreshRuntimeHealth);
+
+  void mountTownScene();
 });
 
 watch(
@@ -78,10 +119,18 @@ watch(
 );
 
 onBeforeUnmount(() => {
+  disposed = true;
   offSceneReady(handleSceneReady);
   offSceneShutdown(handleSceneShutdown);
   offSceneLoadProgress(handleLoadProgress);
   offSceneLoadError(handleLoadError);
+  window.removeEventListener('online', refreshRuntimeHealth);
+  window.removeEventListener('offline', refreshRuntimeHealth);
+  window.removeEventListener('resize', refreshRuntimeHealth);
+  navigator.serviceWorker?.removeEventListener(
+    'controllerchange',
+    refreshRuntimeHealth
+  );
   game?.destroy(true);
   game = null;
 });
@@ -100,11 +149,12 @@ onBeforeUnmount(() => {
       <div class="loading-mark">BM</div>
       <div class="loading-copy">
         <span>LOADING MINIATURE TOWN</span>
-        <strong>正在装配微缩小镇</strong>
+        <strong>{{ loadingMessage }}</strong>
         <div class="loading-track">
           <i :style="{ width: `${Math.round(loadProgress * 100)}%` }"></i>
         </div>
-        <small>{{ Math.round(loadProgress * 100) }}%</small>
+        <small v-if="runtimeError">{{ runtimeError }}</small>
+        <small v-else>{{ Math.round(loadProgress * 100) }}%</small>
       </div>
     </section>
 
@@ -123,6 +173,8 @@ onBeforeUnmount(() => {
       v-if="settingsOpen"
       :preferences="preferences"
       :failed-assets="failedAssets"
+      :build-info="BUILD_INFO"
+      :runtime-health="runtimeHealth"
       @close="settingsOpen = false"
       @update="updatePreferences"
     />
@@ -131,7 +183,7 @@ onBeforeUnmount(() => {
       {{ failedAssets.length }}项视觉资源使用降级显示
     </div>
 
-    <div class="phase-badge">PHASE 1.2 · PRESENTATION INTERFACE</div>
+    <div class="phase-badge">PHASE 1.3 · DEPLOYMENT READY</div>
   </div>
 </template>
 

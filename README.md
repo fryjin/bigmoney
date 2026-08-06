@@ -2,7 +2,7 @@
 
 面向 iPad 横屏的 2.5D 本地多人回合制大富翁游戏。
 
-当前版本：**Phase 1.2 交互完善与视觉资产接口升级**。
+当前版本：**Phase 1.3 部署加固与运行验收**。
 
 ## 技术栈
 
@@ -54,6 +54,9 @@ apps/web/dist
 - `docs/development/phase-1.1-technical-slice.md`：八节点技术切片说明
 - `docs/development/phase-1.2-presentation-interface.md`：交互与视觉资产接口升级说明
 - `docs/development/phase-1.2-validation.md`：Phase 1.2 校验记录
+- `docs/development/phase-1.3-deployment-hardening.md`：部署加固说明
+- `docs/development/cloudflare-first-deployment-checklist.md`：首次上线清单
+- `docs/development/ipad-runtime-acceptance.md`：iPad 真机验收表
 - `docs/development/build-validation.md`：构建校验记录
 - `docs/technical-slice-acceptance.md`：验收基线
 
@@ -67,3 +70,5 @@ Build command: npm run build
 Build output directory: apps/web/dist
 Node version: 22
 ```
+
+生产部署完成前，不进入36格地图扩展。

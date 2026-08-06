@@ -21,3 +21,10 @@
 - [Phase 1.2 交互与视觉资产接口](development/phase-1.2-presentation-interface.md)
 - [Phase 1.2 校验记录](development/phase-1.2-validation.md)
 - [Cloudflare Pages 部署说明](development/cloudflare-pages-setup.md)
+
+## Phase 1.3
+
+- `development/phase-1.3-deployment-hardening.md`：部署加固与运行验收说明
+- `development/cloudflare-first-deployment-checklist.md`：Cloudflare Pages 首次部署清单
+- `development/ipad-runtime-acceptance.md`：iPad 真机验收表
+- `development/phase-1.3-validation.md`：生成环境校验记录

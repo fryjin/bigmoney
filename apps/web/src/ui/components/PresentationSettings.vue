@@ -4,10 +4,15 @@ import type {
   PresentationPreferences,
   QualityPreference
 } from '../../presentation/preferences';
+import type { BuildInfo } from '../../runtime/buildInfo';
+import { shortCommit } from '../../runtime/buildInfo';
+import type { RuntimeHealth } from '../../runtime/runtimeHealth';
 
 const props = defineProps<{
   preferences: PresentationPreferences;
   failedAssets: readonly string[];
+  buildInfo: BuildInfo;
+  runtimeHealth: RuntimeHealth | null;
 }>();
 
 const emit = defineEmits<{
@@ -113,6 +118,24 @@ function updateMotion(motion: MotionPreference): void {
           <small>{{ option.description }}</small>
         </span>
       </button>
+    </div>
+
+    <div class="setting-group diagnostics">
+      <div class="setting-title">
+        <strong>部署诊断</strong>
+        <small>用于 Cloudflare Pages 与 iPad 真机验收，不包含账号或用户数据。</small>
+      </div>
+      <dl class="diagnostic-grid">
+        <div><dt>版本</dt><dd>{{ buildInfo.version }}</dd></div>
+        <div><dt>渠道</dt><dd>{{ buildInfo.channel }}</dd></div>
+        <div><dt>提交</dt><dd>{{ shortCommit(buildInfo.commit) }}</dd></div>
+        <div><dt>网络</dt><dd>{{ runtimeHealth?.online ? '在线' : '离线' }}</dd></div>
+        <div><dt>Service Worker</dt><dd>{{ runtimeHealth?.serviceWorkerControlled ? '已接管' : runtimeHealth?.serviceWorkerSupported ? '待接管' : '不支持' }}</dd></div>
+        <div><dt>IndexedDB</dt><dd>{{ runtimeHealth?.indexedDbSupported ? '可用' : '不可用' }}</dd></div>
+        <div><dt>本地设置</dt><dd>{{ runtimeHealth?.localStorageAvailable ? '可用' : '不可用' }}</dd></div>
+        <div><dt>显示模式</dt><dd>{{ runtimeHealth?.standalone ? '主屏幕应用' : '浏览器' }}</dd></div>
+        <div><dt>视口</dt><dd>{{ runtimeHealth?.viewport ?? '检测中' }}</dd></div>
+      </dl>
     </div>
 
     <div class="asset-health" :class="{ warning: failedAssets.length > 0 }">
@@ -280,4 +303,43 @@ header button {
     max-height: calc(100% - 82px);
   }
 }
+
+.diagnostics {
+  padding-top: 4px;
+}
+
+.diagnostic-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 7px 12px;
+  margin: 2px 0 0;
+  padding: 12px;
+  border: 1px solid rgba(34, 52, 58, 0.08);
+  border-radius: 15px;
+  background: rgba(236, 243, 239, 0.72);
+}
+
+.diagnostic-grid div {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.diagnostic-grid dt {
+  color: #6d7d80;
+  font-size: 10px;
+}
+
+.diagnostic-grid dd {
+  max-width: 120px;
+  margin: 0;
+  overflow: hidden;
+  color: #28423f;
+  font-size: 10px;
+  font-weight: 850;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 </style>

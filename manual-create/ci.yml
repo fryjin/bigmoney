@@ -5,29 +5,41 @@ on:
     branches: [main]
   pull_request:
 
+concurrency:
+  group: bigmoney-ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   validate:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    env:
+      VITE_BUILD_CHANNEL: ci
+      VITE_BUILD_COMMIT: ${{ github.sha }}
+      VITE_ENABLE_DEBUG: "false"
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 22
+          package-manager-cache: false
+
+      - name: Stamp build time
+        run: echo "VITE_BUILD_TIME=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> "$GITHUB_ENV"
 
       - name: Install dependencies
         run: npm install --no-audit --no-fund
 
-      - name: Verify, typecheck, test and build
+      - name: Verify, typecheck, test, build and inspect dist
         run: npm run check
 
       - name: Upload web build
         if: success()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: bigmoney-web-dist
           path: apps/web/dist
