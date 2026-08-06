@@ -2,7 +2,7 @@
 
 面向 iPad 横屏的 2.5D 本地多人回合制大富翁游戏。
 
-当前版本：**Phase 1.1 八节点技术切片**。
+当前版本：**Phase 1.2 交互完善与视觉资产接口升级**。
 
 ## 技术栈
 
@@ -30,7 +30,7 @@ npm run dev
 apps/web/dist
 ```
 
-## Phase 1.1 可玩范围
+## 当前可玩范围
 
 - 两名玩家轮流行动；
 - 单枚六面骰；
@@ -51,7 +51,9 @@ apps/web/dist
 - `AGENTS.md`：开发边界与强制数据流
 - `docs/development-guide.md`：综合开发说明
 - `docs/design/ui-2.5d-visual-guidelines-v1.0.md`：视觉规范
-- `docs/development/phase-1.1-technical-slice.md`：本次实现说明
+- `docs/development/phase-1.1-technical-slice.md`：八节点技术切片说明
+- `docs/development/phase-1.2-presentation-interface.md`：交互与视觉资产接口升级说明
+- `docs/development/phase-1.2-validation.md`：Phase 1.2 校验记录
 - `docs/development/build-validation.md`：构建校验记录
 - `docs/technical-slice-acceptance.md`：验收基线
 

@@ -2,11 +2,23 @@ import Phaser from 'phaser';
 import type { DomainEvent, GameState, PlayerId } from '@bigmoney/game-core';
 import type { PresentationCue } from '@bigmoney/game-flow';
 import {
+  getPresentationProfile,
+  type PresentationPreferences
+} from '../../presentation/preferences';
+import {
+  getVisualAsset,
+  isVisualAssetId,
+  type VisualAssetId
+} from '../assets/visualAssetRegistry';
+import {
   completeScenePresentation,
   notifySceneReady,
   notifySceneShutdown,
+  getScenePresentationPreferences,
+  offScenePreferences,
   offScenePresentation,
   offSceneSync,
+  onScenePreferences,
   onScenePresentation,
   onSceneSync
 } from '../bridges/sceneBridge';
@@ -15,7 +27,7 @@ import {
   TECHNICAL_SLICE_NODES
 } from '../maps/technicalSliceLayout';
 
-const PLAYER_TEXTURES: Record<string, string> = {
+const PLAYER_TEXTURES: Record<string, VisualAssetId> = {
   P1: 'pawn-cat',
   P2: 'pawn-bear'
 };
@@ -31,6 +43,9 @@ export class TownScene extends Phaser.Scene {
   private readonly propertyBuildings = new Map<string, Phaser.GameObjects.Image>();
   private readonly propertyBadges = new Map<string, Phaser.GameObjects.Text>();
   private readonly propertyFlags = new Map<string, Phaser.GameObjects.Container>();
+  private readonly trafficObjects: Phaser.GameObjects.Container[] = [];
+  private preferences: PresentationPreferences = getScenePresentationPreferences();
+  private activePlayerRing?: Phaser.GameObjects.Ellipse;
   private dice?: Phaser.GameObjects.Container;
   private dicePips: Phaser.GameObjects.Arc[] = [];
   private marketBuilding?: Phaser.GameObjects.Image;
@@ -48,13 +63,17 @@ export class TownScene extends Phaser.Scene {
     this.placeBuildings();
     this.placeCityDetails();
     this.createPawns();
+    this.createActivePlayerRing();
     this.createDice();
+    this.applyPresentationPreferences(this.preferences);
 
+    onScenePreferences(this.applyPresentationPreferences, this);
     onScenePresentation(this.handlePresentation, this);
     onSceneSync(this.syncState, this);
     notifySceneReady();
 
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => {
+      offScenePreferences(this.applyPresentationPreferences, this);
       offScenePresentation(this.handlePresentation, this);
       offSceneSync(this.syncState, this);
       notifySceneShutdown();
@@ -213,21 +232,20 @@ export class TownScene extends Phaser.Scene {
   }
 
   private placeBuildings(): void {
-    const bank = this.add.image(788, 490, 'building-bank');
-    bank.setOrigin(0.5, 0.92).setDisplaySize(220, 220).setDepth(478);
+    this.createVisualAssetImage('building-bank', 788, 490);
 
-    this.marketBuilding = this.add.image(794, 402, 'building-market');
-    this.marketBuilding.setOrigin(0.5, 0.92).setDisplaySize(218, 218).setDepth(392);
+    this.marketBuilding = this.createVisualAssetImage('building-market', 794, 402);
 
-    const eventHall = this.add.image(444, 564, 'building-event-hall');
-    eventHall.setOrigin(0.5, 0.92).setDisplaySize(205, 205).setDepth(552);
-
-    const cardShop = this.add.image(820, 288, 'building-card-shop');
-    cardShop.setOrigin(0.5, 0.92).setDisplaySize(188, 188).setDepth(278);
+    this.createVisualAssetImage('building-event-hall', 444, 564);
+    this.createVisualAssetImage('building-card-shop', 820, 288);
 
     for (const [propertyId, visual] of Object.entries(PROPERTY_VISUALS)) {
-      const building = this.add.image(visual.x, visual.y, visual.buildingKey);
-      building.setOrigin(0.5, 0.92).setDisplaySize(200, 200).setDepth(visual.y - 10);
+      if (!isVisualAssetId(visual.buildingKey)) continue;
+      const building = this.createVisualAssetImage(
+        visual.buildingKey,
+        visual.x,
+        visual.y
+      );
       this.propertyBuildings.set(propertyId, building);
 
       const badge = this.add.text(visual.x + 52, visual.y - 112, 'L0', {
@@ -251,10 +269,12 @@ export class TownScene extends Phaser.Scene {
     ] as const;
     treePositions.forEach(([x, y], index) => this.createTree(x, y, 0.76 + (index % 3) * 0.08));
 
-    this.createCar(258, 568, 0xe87a68, -18);
-    this.createCar(624, 548, 0xf1eee5, -25);
-    this.createCar(826, 500, 0x7bb0c2, -25);
-    this.createCar(620, 370, 0xe3b851, 24);
+    this.trafficObjects.push(
+      this.createCar(258, 568, 0xe87a68, -18),
+      this.createCar(624, 548, 0xf1eee5, -25),
+      this.createCar(826, 500, 0x7bb0c2, -25),
+      this.createCar(620, 370, 0xe3b851, 24)
+    );
 
     this.createStreetLight(370, 640);
     this.createStreetLight(586, 572);
@@ -277,12 +297,18 @@ export class TownScene extends Phaser.Scene {
     tree.setScale(scale).setDepth(y);
   }
 
-  private createCar(x: number, y: number, color: number, angle: number): void {
+  private createCar(
+    x: number,
+    y: number,
+    color: number,
+    angle: number
+  ): Phaser.GameObjects.Container {
     const shadow = this.add.ellipse(0, 8, 64, 23, 0x20343b, 0.16);
     const body = this.add.rectangle(0, 0, 58, 28, color).setStrokeStyle(2, 0xffffff, 0.45);
     const cabin = this.add.rectangle(2, -12, 32, 20, 0xd9eef1).setStrokeStyle(2, 0x294149, 0.35);
     const car = this.add.container(x, y, [shadow, body, cabin]);
     car.setAngle(angle).setDepth(y + 4);
+    return car;
   }
 
   private createStreetLight(x: number, y: number): void {
@@ -296,13 +322,51 @@ export class TownScene extends Phaser.Scene {
     const start = TECHNICAL_SLICE_NODES[0]!;
     for (const playerId of ['P1', 'P2']) {
       const offset = PLAYER_OFFSETS[playerId]!;
-      const pawn = this.add.image(
+      const pawn = this.createVisualAssetImage(
+        PLAYER_TEXTURES[playerId]!,
         start.x + offset.x,
-        start.y + offset.y,
-        PLAYER_TEXTURES[playerId]!
+        start.y + offset.y
       );
-      pawn.setOrigin(0.5, 0.88).setDisplaySize(68, 88).setDepth(start.y + 44);
       this.pawns.set(playerId, pawn);
+    }
+  }
+
+  private createActivePlayerRing(): void {
+    const start = TECHNICAL_SLICE_NODES[0]!;
+    this.activePlayerRing = this.add.ellipse(
+      start.x,
+      start.y + 13,
+      76,
+      34,
+      0xffffff,
+      0.16
+    );
+    this.activePlayerRing
+      .setStrokeStyle(4, 0xe87868, 0.92)
+      .setDepth(start.y + 39);
+  }
+
+  private createVisualAssetImage(
+    assetId: VisualAssetId,
+    x: number,
+    y: number
+  ): Phaser.GameObjects.Image {
+    const asset = getVisualAsset(assetId);
+    const image = this.add.image(x, y, asset.key);
+    image
+      .setOrigin(asset.origin.x, asset.origin.y)
+      .setDisplaySize(asset.displaySize.width, asset.displaySize.height)
+      .setDepth(y + asset.depthOffset);
+    return image;
+  }
+
+  private applyPresentationPreferences(
+    next: PresentationPreferences
+  ): void {
+    this.preferences = { ...next };
+    const profile = getPresentationProfile(next);
+    for (const traffic of this.trafficObjects) {
+      traffic.setVisible(profile.showTraffic);
     }
   }
 
@@ -542,6 +606,9 @@ export class TownScene extends Phaser.Scene {
       pawn.setDepth(node.y + offset.y + 44);
     }
 
+    const activePlayer = state.players[state.activePlayerIndex];
+    if (activePlayer) this.updateActivePlayerRing(activePlayer);
+
     for (const [propertyId, property] of Object.entries(state.properties)) {
       const badge = this.propertyBadges.get(propertyId);
       badge?.setText(`L${property.level}`);
@@ -552,6 +619,19 @@ export class TownScene extends Phaser.Scene {
         this.propertyFlags.delete(propertyId);
       }
     }
+  }
+
+  private updateActivePlayerRing(player: GameState['players'][number]): void {
+    const pawn = this.pawns.get(player.id);
+    if (!pawn || !this.activePlayerRing) return;
+
+    const parsedColor = Number.parseInt(player.color.replace('#', ''), 16);
+    const color = Number.isFinite(parsedColor) ? parsedColor : 0x4a9a7f;
+    this.activePlayerRing
+      .setPosition(pawn.x, pawn.y + 13)
+      .setDepth(pawn.depth - 1)
+      .setStrokeStyle(4, color, 0.92)
+      .setVisible(true);
   }
 
   private ensurePropertyFlag(propertyId: string, ownerId: PlayerId): void {
@@ -575,17 +655,35 @@ export class TownScene extends Phaser.Scene {
   private tween(
     config: Phaser.Types.Tweens.TweenBuilderConfig
   ): Promise<void> {
+    const profile = getPresentationProfile(this.preferences);
+    const adjustedConfig: Phaser.Types.Tweens.TweenBuilderConfig = {
+      ...config
+    };
+
+    if (typeof config.duration === 'number') {
+      adjustedConfig.duration = Math.max(
+        1,
+        Math.round(config.duration * profile.durationScale)
+      );
+    }
+
     return new Promise((resolve) => {
       this.tweens.add({
-        ...config,
+        ...adjustedConfig,
         onComplete: () => resolve()
       });
     });
   }
 
   private delay(duration: number): Promise<void> {
+    const profile = getPresentationProfile(this.preferences);
+    const adjustedDuration = Math.max(
+      1,
+      Math.round(duration * profile.durationScale)
+    );
+
     return new Promise((resolve) => {
-      this.time.delayedCall(duration, resolve);
+      this.time.delayedCall(adjustedDuration, resolve);
     });
   }
 }

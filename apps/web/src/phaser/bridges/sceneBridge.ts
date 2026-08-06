@@ -1,13 +1,24 @@
 import Phaser from 'phaser';
 import type { GameState } from '@bigmoney/game-core';
 import type { PresentationCue } from '@bigmoney/game-flow';
+import {
+  getPresentationProfile,
+  loadPresentationPreferences,
+  normalizePresentationPreferences,
+  savePresentationPreferences,
+  type PresentationPreferences
+} from '../../presentation/preferences';
 
 const emitter = new Phaser.Events.EventEmitter();
 let ready = false;
+let preferences = loadPresentationPreferences();
 
 export const SceneBridgeEvents = {
   ready: 'scene:ready',
   shutdown: 'scene:shutdown',
+  loadProgress: 'scene:load-progress',
+  loadError: 'scene:load-error',
+  preferences: 'scene:preferences',
   present: 'scene:present',
   presented: 'scene:presented',
   sync: 'scene:sync'
@@ -21,6 +32,84 @@ export function notifySceneReady(): void {
 export function notifySceneShutdown(): void {
   ready = false;
   emitter.emit(SceneBridgeEvents.shutdown);
+}
+
+export function notifySceneLoadProgress(progress: number): void {
+  emitter.emit(SceneBridgeEvents.loadProgress, Phaser.Math.Clamp(progress, 0, 1));
+}
+
+export function notifySceneLoadError(assetKey: string): void {
+  emitter.emit(SceneBridgeEvents.loadError, assetKey);
+}
+
+export function onSceneReady(handler: () => void, context?: unknown): void {
+  emitter.on(SceneBridgeEvents.ready, handler, context);
+}
+
+export function offSceneReady(handler: () => void, context?: unknown): void {
+  emitter.off(SceneBridgeEvents.ready, handler, context);
+}
+
+export function onSceneShutdown(handler: () => void, context?: unknown): void {
+  emitter.on(SceneBridgeEvents.shutdown, handler, context);
+}
+
+export function offSceneShutdown(handler: () => void, context?: unknown): void {
+  emitter.off(SceneBridgeEvents.shutdown, handler, context);
+}
+
+export function onSceneLoadProgress(
+  handler: (progress: number) => void,
+  context?: unknown
+): void {
+  emitter.on(SceneBridgeEvents.loadProgress, handler, context);
+}
+
+export function offSceneLoadProgress(
+  handler: (progress: number) => void,
+  context?: unknown
+): void {
+  emitter.off(SceneBridgeEvents.loadProgress, handler, context);
+}
+
+export function onSceneLoadError(
+  handler: (assetKey: string) => void,
+  context?: unknown
+): void {
+  emitter.on(SceneBridgeEvents.loadError, handler, context);
+}
+
+export function offSceneLoadError(
+  handler: (assetKey: string) => void,
+  context?: unknown
+): void {
+  emitter.off(SceneBridgeEvents.loadError, handler, context);
+}
+
+export function getScenePresentationPreferences(): PresentationPreferences {
+  return { ...preferences };
+}
+
+export function updateScenePresentationPreferences(
+  next: PresentationPreferences
+): void {
+  preferences = normalizePresentationPreferences(next);
+  savePresentationPreferences(preferences);
+  emitter.emit(SceneBridgeEvents.preferences, { ...preferences });
+}
+
+export function onScenePreferences(
+  handler: (next: PresentationPreferences) => void,
+  context?: unknown
+): void {
+  emitter.on(SceneBridgeEvents.preferences, handler, context);
+}
+
+export function offScenePreferences(
+  handler: (next: PresentationPreferences) => void,
+  context?: unknown
+): void {
+  emitter.off(SceneBridgeEvents.preferences, handler, context);
 }
 
 export function onScenePresentation(
@@ -59,10 +148,12 @@ export async function presentSceneCue(cue: PresentationCue): Promise<void> {
   await waitForSceneReady();
 
   return new Promise((resolve) => {
+    const profile = getPresentationProfile(preferences);
+    const timeoutDuration = Math.max(900, Math.round(3600 * profile.durationScale));
     const timeout = window.setTimeout(() => {
       emitter.off(SceneBridgeEvents.presented, onPresented);
       resolve();
-    }, 2400);
+    }, timeoutDuration);
 
     const onPresented = (presentedCueId: number): void => {
       if (presentedCueId !== cue.id) return;

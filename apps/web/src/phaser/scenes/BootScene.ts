@@ -1,6 +1,14 @@
 import Phaser from 'phaser';
+import { preloadVisualAssets } from '../assets/visualAssetRegistry';
+import {
+  notifySceneLoadError,
+  notifySceneLoadProgress
+} from '../bridges/sceneBridge';
 
-const ASSET_ROOT = '/assets/technical-slice';
+interface LoaderFileLike {
+  key?: string;
+  src?: string | string[];
+}
 
 export class BootScene extends Phaser.Scene {
   constructor() {
@@ -8,17 +16,24 @@ export class BootScene extends Phaser.Scene {
   }
 
   preload(): void {
-    this.load.svg('building-bank', `${ASSET_ROOT}/building-bank.svg`, { width: 280, height: 280 });
-    this.load.svg('building-market', `${ASSET_ROOT}/building-market.svg`, { width: 280, height: 280 });
-    this.load.svg('building-home-a', `${ASSET_ROOT}/building-home-a.svg`, { width: 280, height: 280 });
-    this.load.svg('building-home-b', `${ASSET_ROOT}/building-home-b.svg`, { width: 280, height: 280 });
-    this.load.svg('building-card-shop', `${ASSET_ROOT}/building-card-shop.svg`, { width: 280, height: 280 });
-    this.load.svg('building-event-hall', `${ASSET_ROOT}/building-event-hall.svg`, { width: 280, height: 280 });
-    this.load.svg('pawn-cat', `${ASSET_ROOT}/pawn-cat.svg`, { width: 160, height: 210 });
-    this.load.svg('pawn-bear', `${ASSET_ROOT}/pawn-bear.svg`, { width: 160, height: 210 });
+    this.load.on('progress', this.handleProgress, this);
+    this.load.on('loaderror', this.handleLoadError, this);
+    preloadVisualAssets(this);
   }
 
   create(): void {
+    notifySceneLoadProgress(1);
+    this.load.off('progress', this.handleProgress, this);
+    this.load.off('loaderror', this.handleLoadError, this);
     this.scene.start('TownScene');
+  }
+
+  private handleProgress(progress: number): void {
+    notifySceneLoadProgress(progress);
+  }
+
+  private handleLoadError(file: LoaderFileLike): void {
+    const source = Array.isArray(file.src) ? file.src.join(', ') : file.src;
+    notifySceneLoadError(file.key ?? source ?? 'unknown-asset');
   }
 }

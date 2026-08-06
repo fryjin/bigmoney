@@ -23,7 +23,10 @@ import GameCanvas from './components/GameCanvas.vue';
 import PlayerBar from './components/PlayerBar.vue';
 import ControlDock from './components/ControlDock.vue';
 import ContextPanel from './components/ContextPanel.vue';
-import { presentSceneCue } from '../phaser/bridges/sceneBridge';
+import {
+  getScenePresentationPreferences,
+  presentSceneCue
+} from '../phaser/bridges/sceneBridge';
 import {
   clearTechnicalSliceSave,
   logDomainEvents,
@@ -143,6 +146,8 @@ watch(
 );
 
 watch(statusMessage, () => {
+  if (getScenePresentationPreferences().motion === 'reduced') return;
+
   window.requestAnimationFrame(() => {
     animate('.status-pill', {
       opacity: [0.45, 1],
