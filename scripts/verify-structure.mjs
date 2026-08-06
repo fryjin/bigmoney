@@ -6,8 +6,12 @@ const requiredFiles = [
   'package.json',
   'tsconfig.base.json',
   'AGENTS.md',
+  'CODEX_START_HERE.md',
+  'CODEX_TASK_PHASE_2_0.md',
   'apps/web/package.json',
   'apps/web/src/main.ts',
+  'apps/web/src/session/persistence.ts',
+  'apps/web/src/session/persistence.test.ts',
   'apps/web/src/ui/App.vue',
   'apps/web/src/ui/components/PresentationSettings.vue',
   'apps/web/src/presentation/preferences.ts',
@@ -18,10 +22,15 @@ const requiredFiles = [
   'packages/game-content/package.json',
   'packages/game-core/package.json',
   'packages/game-flow/package.json',
+  'packages/game-flow/src/machine.ts',
+  'packages/game-flow/src/controller.ts',
   'packages/game-random/package.json',
   'packages/game-storage/package.json',
   'packages/design-tokens/package.json',
-  'scripts/verify-dist.mjs'
+  'scripts/verify-dist.mjs',
+  'scripts/codex-preflight.mjs',
+  'docs/development/phase-1.4-technical-slice-closeout.md',
+  'docs/development/phase-1.4-validation.md'
 ];
 
 const failures = [];

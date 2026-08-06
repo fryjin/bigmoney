@@ -1,40 +1,41 @@
-# Phase 1.3 增量补丁清单
+# Big Money Phase 1.4 Patch Manifest
 
-## 新增文件
+将本目录内容覆盖到仓库根目录。此补丁基于 Phase 1.3 + v0.3.1 CI hotfix。
 
-- `apps/web/src/env.d.ts`
-- `apps/web/src/runtime/buildInfo.test.ts`
-- `apps/web/src/runtime/buildInfo.ts`
-- `apps/web/src/runtime/runtimeHealth.test.ts`
-- `apps/web/src/runtime/runtimeHealth.ts`
-- `docs/development/cloudflare-first-deployment-checklist.md`
-- `docs/development/ipad-runtime-acceptance.md`
-- `docs/development/phase-1.3-deployment-hardening.md`
-- `docs/development/phase-1.3-validation.md`
-- `scripts/verify-dist.mjs`
+## Changed or added files (26)
 
-## 修改文件
-
-- `.env.example`
-- `.github/workflows/ci.yml`
+- `AGENTS.md`
+- `CODEX_START_HERE.md`
+- `CODEX_TASK_PHASE_2_0.md`
 - `FILES.txt`
 - `README.md`
 - `UPLOAD_INSTRUCTIONS.md`
 - `apps/web/package.json`
-- `apps/web/public/_headers`
-- `apps/web/src/phaser/bridges/sceneBridge.ts`
+- `apps/web/src/main.ts`
+- `apps/web/src/session/persistence.test.ts`
+- `apps/web/src/session/persistence.ts`
+- `apps/web/src/ui/App.vue`
+- `apps/web/src/ui/components/ControlDock.vue`
 - `apps/web/src/ui/components/GameCanvas.vue`
-- `apps/web/src/ui/components/PresentationSettings.vue`
-- `apps/web/vite.config.ts`
+- `apps/web/src/ui/theme/global.css`
 - `docs/README.md`
-- `manual-create/ci.yml`
+- `docs/development/change-manifest.md`
+- `docs/development/phase-1.4-technical-slice-closeout.md`
+- `docs/development/phase-1.4-validation.md`
 - `package.json`
+- `packages/game-flow/package.json`
+- `packages/game-flow/src/controller.ts`
+- `packages/game-flow/src/index.ts`
+- `packages/game-flow/src/machine.ts`
+- `packages/game-flow/tests/controller.test.ts`
+- `scripts/codex-preflight.mjs`
 - `scripts/verify-structure.mjs`
 
-## 删除文件
+## Deleted files (0)
 
 - 无
 
-## 上传方式
+## Verification boundary
 
-将补丁目录内部内容覆盖到 GitHub 仓库根目录。不要把最外层目录上传到仓库。
+- 已完成结构、语法、JSON、SVG和关键模块严格类型检查。
+- 完整 `npm run check` 由上传后的 GitHub Actions 执行。

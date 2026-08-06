@@ -2,7 +2,7 @@
 
 面向 iPad 横屏的 2.5D 本地多人回合制大富翁游戏。
 
-当前版本：**Phase 1.3 部署加固与运行验收**。
+当前版本：**Phase 1.4 八节点技术切片收口**。
 
 ## 技术栈
 
@@ -42,7 +42,10 @@ apps/web/dist
 - 随机事件；
 - 免费抽卡与满手“四选三”技术验证；
 - 大轮结束时股票倒计时和结算；
-- IndexedDB 本地快照。
+- IndexedDB 稳定节点快照；
+- 玩家交接遮罩与私有信息保护；
+- 继续游戏 / 重新开始入口；
+- 存档版本迁移、完整性校验与损坏隔离。
 
 完整 36 格规则尚未全部接入。规则基线以 `docs/rules-baseline.md` 为准。
 
@@ -55,6 +58,10 @@ apps/web/dist
 - `docs/development/phase-1.2-presentation-interface.md`：交互与视觉资产接口升级说明
 - `docs/development/phase-1.2-validation.md`：Phase 1.2 校验记录
 - `docs/development/phase-1.3-deployment-hardening.md`：部署加固说明
+- `docs/development/phase-1.4-technical-slice-closeout.md`：技术切片收口说明
+- `docs/development/phase-1.4-validation.md`：Phase 1.4 校验记录
+- `CODEX_START_HERE.md`：本地 Codex 项目起点
+- `CODEX_TASK_PHASE_2_0.md`：下一阶段实现任务
 - `docs/development/cloudflare-first-deployment-checklist.md`：首次上线清单
 - `docs/development/ipad-runtime-acceptance.md`：iPad 真机验收表
 - `docs/development/build-validation.md`：构建校验记录
@@ -71,4 +78,4 @@ Build output directory: apps/web/dist
 Node version: 22
 ```
 
-生产部署完成前，不进入36格地图扩展。
+iPad 真机验收暂挂起；Phase 2.0 规则开发前必须保持 CI 与 Cloudflare 构建通过。

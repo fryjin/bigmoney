@@ -8,6 +8,7 @@ export {
 
 export type {
   FlowPhase,
+  StableFlowPhase,
   FlowMachineEvent
 } from './machine';
 

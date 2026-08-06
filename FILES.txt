@@ -3,6 +3,8 @@
 ./.github/workflows/ci.yml
 ./.gitignore
 ./AGENTS.md
+./CODEX_START_HERE.md
+./CODEX_TASK_PHASE_2_0.md
 ./FILES.txt
 ./README.md
 ./UPLOAD_INSTRUCTIONS.md
@@ -33,6 +35,7 @@
 ./apps/web/src/runtime/buildInfo.ts
 ./apps/web/src/runtime/runtimeHealth.test.ts
 ./apps/web/src/runtime/runtimeHealth.ts
+./apps/web/src/session/persistence.test.ts
 ./apps/web/src/session/persistence.ts
 ./apps/web/src/ui/App.vue
 ./apps/web/src/ui/components/ContextPanel.vue
@@ -52,6 +55,7 @@
 ./docs/design/asset-naming-delivery-checklist.md
 ./docs/design/phase-1-collaboration-checklist.md
 ./docs/design/ui-2.5d-visual-guidelines-v1.0.md
+./docs/development-guide.md
 ./docs/development/build-validation.md
 ./docs/development/change-manifest.md
 ./docs/development/ci-dependency-hotfix-v0.1.2.md
@@ -64,10 +68,12 @@
 ./docs/development/phase-1.1-technical-slice.md
 ./docs/development/phase-1.2-presentation-interface.md
 ./docs/development/phase-1.2-validation.md
+./docs/development/phase-1.3-ci-types-hotfix-v0.3.1.md
 ./docs/development/phase-1.3-deployment-hardening.md
 ./docs/development/phase-1.3-validation.md
+./docs/development/phase-1.4-technical-slice-closeout.md
+./docs/development/phase-1.4-validation.md
 ./docs/development/repository-acceptance.md
-./docs/development-guide.md
 ./docs/rules-baseline.md
 ./docs/technical-slice-acceptance.md
 ./docs/ui-design-guidelines.md
@@ -109,6 +115,7 @@
 ./packages/game-testkit/package.json
 ./packages/game-testkit/src/index.ts
 ./packages/game-testkit/tsconfig.json
+./scripts/codex-preflight.mjs
 ./scripts/verify-dist.mjs
 ./scripts/verify-repository.mjs
 ./scripts/verify-structure.mjs

@@ -11,12 +11,14 @@ import { technicalSliceContent } from '@bigmoney/game-content';
 import {
   createTechnicalSliceState,
   type DomainEvent,
-  type GameState
+  type GameState,
+  type PlayerId
 } from '@bigmoney/game-core';
 import {
   TechnicalSliceSession,
   type PresentationCue,
-  type TechnicalSliceSessionSnapshot
+  type TechnicalSliceSessionSnapshot,
+  type StableFlowPhase
 } from '@bigmoney/game-flow';
 import { SeededRandom } from '@bigmoney/game-random';
 import GameCanvas from './components/GameCanvas.vue';
@@ -31,20 +33,22 @@ import {
   clearTechnicalSliceSave,
   logDomainEvents,
   saveTechnicalSliceSave,
-  type TechnicalSliceSave
+  type TechnicalSliceLoadResult
 } from '../session/persistence';
 
 const props = defineProps<{
-  initialSave: TechnicalSliceSave | null;
+  initialLoad: TechnicalSliceLoadResult;
 }>();
 
-const random = props.initialSave
-  ? SeededRandom.fromSnapshot(props.initialSave.random)
+const initialSave = props.initialLoad.save;
+const random = initialSave
+  ? SeededRandom.fromSnapshot(initialSave.random)
   : new SeededRandom(20260805);
 
 const session = new TechnicalSliceSession(
   random,
-  props.initialSave?.game ?? createTechnicalSliceState()
+  initialSave?.game ?? createTechnicalSliceState(),
+  initialSave?.flow ?? 'turnReady'
 );
 
 const snapshot = shallowRef<TechnicalSliceSessionSnapshot>(session.getSnapshot());
@@ -53,18 +57,61 @@ const assetsOpen = ref(false);
 const selectedStockId = ref('');
 const selectedPrincipal = ref(50);
 const selectedPeriod = ref<2 | 4 | 6>(2);
+const actionLocked = ref(false);
+const sessionAccepted = ref(props.initialLoad.status !== 'ready');
+const resumePromptOpen = ref(props.initialLoad.status === 'ready');
+const recoveryNotice = ref(
+  props.initialLoad.status === 'recovered' ? props.initialLoad.message : null
+);
+const storageError = ref('');
+const presentationError = ref('');
+const restoredHandoffFromPlayerId = ref<PlayerId | null>(
+  initialSave?.handoffFromPlayerId ?? null
+);
 let handledCueId = 0;
 let lastLoggedDomainRevision = -1;
 let lastSavedRoundKey = '';
+let saveQueue = Promise.resolve();
 
 const game = computed<GameState>(() => snapshot.value.game);
 const activePlayer = computed(
   () => game.value.players[game.value.activePlayerIndex]!
 );
+const nextPlayer = computed(
+  () => game.value.players[(game.value.activePlayerIndex + 1) % game.value.players.length]!
+);
 const pending = computed(() => game.value.pendingInteraction);
-const busy = computed(() => snapshot.value.cue !== null);
-const canRoll = computed(() => snapshot.value.flow === 'turnReady');
-const canEndTurn = computed(() => snapshot.value.flow === 'turnEnd');
+const handoffPending = computed(() => snapshot.value.flow === 'awaitingHandoff');
+const privateInfoHidden = computed(
+  () =>
+    resumePromptOpen.value ||
+    snapshot.value.flow === 'presentingTurnEnd' ||
+    handoffPending.value
+);
+const busy = computed(
+  () => snapshot.value.cue !== null || actionLocked.value || privateInfoHidden.value
+);
+const canRoll = computed(
+  () => snapshot.value.flow === 'turnReady' && !resumePromptOpen.value
+);
+const canEndTurn = computed(
+  () => snapshot.value.flow === 'turnEnd' && !resumePromptOpen.value
+);
+
+const lastTurnEndedEvent = computed(() =>
+  [...snapshot.value.lastEvents]
+    .reverse()
+    .find((event): event is Extract<DomainEvent, { type: 'TURN_ENDED' }> =>
+      event.type === 'TURN_ENDED'
+    ) ?? null
+);
+
+const handoffFromPlayerId = computed<PlayerId | null>(
+  () => lastTurnEndedEvent.value?.playerId ?? restoredHandoffFromPlayerId.value
+);
+const handoffFromPlayer = computed(() =>
+  game.value.players.find((player) => player.id === handoffFromPlayerId.value) ?? null
+);
 
 const propertyCounts = computed<Record<string, number>>(() => {
   const counts: Record<string, number> = {};
@@ -88,6 +135,10 @@ const currentPropertyDefinition = computed(() => {
 });
 
 const statusMessage = computed(() => {
+  if (resumePromptOpen.value) return '检测到稳定存档，请选择继续或重新开始';
+  if (snapshot.value.flow === 'presentingTurnEnd') return '正在完成本回合并隐藏私有信息';
+  if (handoffPending.value) return `请将设备交给 ${activePlayer.value.name}`;
+
   const interaction = pending.value;
   if (interaction?.type === 'STOCK_MARKET') return '经过金融中心：购买一只股票，或跳过后继续移动';
   if (interaction?.type === 'PROPERTY_PURCHASE') return '无主地产：请决定是否购买';
@@ -102,8 +153,13 @@ const statusMessage = computed(() => {
   if (last?.type === 'PROPERTY_PURCHASED') return '地产购买成功，所有权标记已更新';
   if (last?.type === 'PROPERTY_UPGRADED') return `地产升级至 L${last.level}`;
   if (last?.type === 'RENT_PAID') return `支付租金 ${last.amount * 10}万元`;
-  if (last?.type === 'TURN_ENDED') return `轮到 ${last.nextPlayerId}`;
-  if (snapshot.value.flow === 'turnEnd') return '本回合结算完成';
+  if (last?.type === 'TURN_ENDED') {
+    const player = game.value.players.find((candidate) => candidate.id === last.nextPlayerId);
+    return `轮到 ${player?.name ?? last.nextPlayerId}`;
+  }
+  if (snapshot.value.flow === 'turnEnd') {
+    return `本回合结算完成，请点击“结束并交给 ${nextPlayer.value.name}”`;
+  }
   return '点击投骰，开始本回合';
 });
 
@@ -112,20 +168,37 @@ const currentTileName = computed(() => {
   return tile?.name ?? '未知地格';
 });
 
+const savedAtText = computed(() => {
+  if (!initialSave) return '';
+  const date = new Date(initialSave.savedAt);
+  return Number.isNaN(date.getTime()) ? initialSave.savedAt : date.toLocaleString('zh-CN');
+});
+
 const unsubscribe = session.subscribe((next) => {
   snapshot.value = next;
 
-  if (next.domainRevision !== lastLoggedDomainRevision) {
-    lastLoggedDomainRevision = next.domainRevision;
-    if (next.lastEvents.length > 0) void logDomainEvents(next.lastEvents);
+  if (
+    next.flow === 'presentingTurnEnd' ||
+    next.flow === 'awaitingHandoff'
+  ) {
+    cardsOpen.value = false;
+    assetsOpen.value = false;
   }
 
-  if (next.flow === 'turnReady') {
-    const saveKey = `${next.game.round}:${next.game.activePlayerIndex}:${next.domainRevision}`;
-    if (saveKey !== lastSavedRoundKey) {
-      lastSavedRoundKey = saveKey;
-      void saveTechnicalSliceSave(next.game, random.getSnapshot());
+  if (next.domainRevision !== lastLoggedDomainRevision) {
+    lastLoggedDomainRevision = next.domainRevision;
+    if (next.lastEvents.length > 0) {
+      void logDomainEvents(next.lastEvents).catch((error: unknown) => {
+        storageError.value = `事件日志写入失败：${errorMessage(error)}`;
+      });
     }
+  }
+
+  if (
+    sessionAccepted.value &&
+    (next.flow === 'turnReady' || next.flow === 'awaitingHandoff')
+  ) {
+    queueStableSave(next);
   }
 
   if (next.cue && next.cue.id !== handledCueId) {
@@ -163,54 +236,133 @@ onBeforeUnmount(() => {
   session.destroy();
 });
 
+function queueStableSave(next: TechnicalSliceSessionSnapshot): void {
+  const flow = next.flow as StableFlowPhase;
+  const saveKey = [
+    flow,
+    next.game.round,
+    next.game.activePlayerIndex,
+    next.domainRevision
+  ].join(':');
+  if (saveKey === lastSavedRoundKey) return;
+  lastSavedRoundKey = saveKey;
+
+  const gameSnapshot = structuredClone(next.game);
+  const randomSnapshot = random.getSnapshot();
+  const turnEnded = [...next.lastEvents]
+    .reverse()
+    .find((event) => event.type === 'TURN_ENDED');
+  const fromPlayerId =
+    flow === 'awaitingHandoff'
+      ? turnEnded?.type === 'TURN_ENDED'
+        ? turnEnded.playerId
+        : restoredHandoffFromPlayerId.value
+      : null;
+
+  saveQueue = saveQueue
+    .then(async () => {
+      await saveTechnicalSliceSave(
+        gameSnapshot,
+        randomSnapshot,
+        flow,
+        fromPlayerId
+      );
+      storageError.value = '';
+    })
+    .catch((error: unknown) => {
+      storageError.value = `稳定存档写入失败：${errorMessage(error)}`;
+      lastSavedRoundKey = '';
+    });
+}
+
 async function runPresentation(cue: PresentationCue): Promise<void> {
-  await presentSceneCue(cue);
-  session.presentationDone(cue.id);
+  try {
+    await presentSceneCue(cue);
+  } catch (error) {
+    presentationError.value = `场景表现降级完成：${errorMessage(error)}`;
+  } finally {
+    session.presentationDone(cue.id);
+  }
+}
+
+function performAction(operation: () => void): void {
+  if (actionLocked.value || resumePromptOpen.value) return;
+  actionLocked.value = true;
+
+  try {
+    operation();
+  } finally {
+    queueMicrotask(() => {
+      actionLocked.value = false;
+    });
+  }
 }
 
 function roll(): void {
-  session.roll();
+  performAction(() => session.roll());
 }
 
 function endTurn(): void {
-  session.endTurn();
+  cardsOpen.value = false;
+  assetsOpen.value = false;
+  performAction(() => session.endTurn());
+}
+
+function confirmHandoff(): void {
+  performAction(() => {
+    restoredHandoffFromPlayerId.value = null;
+    session.confirmHandoff();
+  });
 }
 
 function buyProperty(): void {
-  session.buyProperty();
+  performAction(() => session.buyProperty());
 }
 
 function skipProperty(): void {
-  session.skipProperty();
+  performAction(() => session.skipProperty());
 }
 
 function upgradeProperty(): void {
-  session.upgradeProperty();
+  performAction(() => session.upgradeProperty());
 }
 
 function skipUpgrade(): void {
-  session.skipUpgrade();
+  performAction(() => session.skipUpgrade());
 }
 
 function skipStock(): void {
-  session.resolveStockMarket(null);
+  performAction(() => session.resolveStockMarket(null));
 }
 
 function buyStock(): void {
   if (!selectedStockId.value) return;
-  session.resolveStockMarket({
-    stockId: selectedStockId.value,
-    principal: selectedPrincipal.value,
-    period: selectedPeriod.value
+  performAction(() => {
+    session.resolveStockMarket({
+      stockId: selectedStockId.value,
+      principal: selectedPrincipal.value,
+      period: selectedPeriod.value
+    });
   });
 }
 
 function acknowledgeResult(): void {
-  session.acknowledgeResult();
+  performAction(() => session.acknowledgeResult());
 }
 
 function discardCard(cardInstanceId: string): void {
-  session.chooseCardToDiscard(cardInstanceId);
+  performAction(() => session.chooseCardToDiscard(cardInstanceId));
+}
+
+function continueSavedGame(): void {
+  sessionAccepted.value = true;
+  resumePromptOpen.value = false;
+  if (snapshot.value.flow === 'turnReady' || snapshot.value.flow === 'awaitingHandoff') {
+    queueStableSave(snapshot.value);
+  }
+  if (props.initialLoad.migrated && props.initialLoad.message) {
+    recoveryNotice.value = props.initialLoad.message;
+  }
 }
 
 function stockName(stockId: string): string {
@@ -232,13 +384,27 @@ function eventAmount(event: DomainEvent): string | null {
 }
 
 async function resetTechnicalSlice(): Promise<void> {
-  await clearTechnicalSliceSave();
-  window.location.reload();
+  if (actionLocked.value) return;
+  actionLocked.value = true;
+
+  try {
+    sessionAccepted.value = false;
+    await saveQueue;
+    await clearTechnicalSliceSave();
+    window.location.reload();
+  } catch (error) {
+    storageError.value = `无法清除存档：${errorMessage(error)}`;
+    actionLocked.value = false;
+  }
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : '未知错误';
 }
 </script>
 
 <template>
-  <main class="app-shell">
+  <main class="app-shell" :class="{ 'private-info-hidden': privateInfoHidden }">
     <GameCanvas :game-state="game" />
 
     <PlayerBar
@@ -247,7 +413,11 @@ async function resetTechnicalSlice(): Promise<void> {
       :property-counts="propertyCounts"
     />
 
-    <aside class="current-player-card" :style="{ '--player-color': activePlayer.color }">
+    <aside
+      v-if="!privateInfoHidden"
+      class="current-player-card"
+      :style="{ '--player-color': activePlayer.color }"
+    >
       <div class="current-player-heading">
         <span class="current-player-avatar">{{ activePlayer.id }}</span>
         <div>
@@ -263,17 +433,27 @@ async function resetTechnicalSlice(): Promise<void> {
       <button class="text-button" type="button" @click="resetTechnicalSlice">重置技术切片</button>
     </aside>
 
+    <aside v-else class="current-player-card privacy-card">
+      <span class="privacy-lock">●</span>
+      <div>
+        <span class="eyebrow">Private information</span>
+        <strong>玩家私有信息已隐藏</strong>
+      </div>
+    </aside>
+
     <section class="status-pill" aria-live="polite">
       <span class="status-dot"></span>
       {{ statusMessage }}
     </section>
 
     <ControlDock
+      v-if="!privateInfoHidden"
       :can-roll="canRoll"
       :can-end-turn="canEndTurn"
       :busy="busy"
       :card-count="activePlayer.cards.length"
       :stock-count="activePlayer.stocks.length"
+      :next-player-name="nextPlayer.name"
       @roll="roll"
       @end-turn="endTurn"
       @toggle-cards="cardsOpen = !cardsOpen; assetsOpen = false"
@@ -281,7 +461,7 @@ async function resetTechnicalSlice(): Promise<void> {
     />
 
     <ContextPanel
-      v-if="cardsOpen"
+      v-if="cardsOpen && !privateInfoHidden"
       title="我的手牌"
       eyebrow="Cards"
       @close="cardsOpen = false"
@@ -297,7 +477,7 @@ async function resetTechnicalSlice(): Promise<void> {
     </ContextPanel>
 
     <ContextPanel
-      v-if="assetsOpen"
+      v-if="assetsOpen && !privateInfoHidden"
       title="资产概览"
       eyebrow="Assets"
       @close="assetsOpen = false"
@@ -326,7 +506,7 @@ async function resetTechnicalSlice(): Promise<void> {
     </ContextPanel>
 
     <section
-      v-if="pending"
+      v-if="pending && !privateInfoHidden"
       class="modal-backdrop"
       aria-modal="true"
       role="dialog"
@@ -344,6 +524,7 @@ async function resetTechnicalSlice(): Promise<void> {
             class="choice-card"
             :class="{ selected: selectedStockId === stockId }"
             type="button"
+            :disabled="actionLocked"
             @click="selectedStockId = stockId"
           >
             <strong>{{ stockName(stockId) }}</strong>
@@ -358,6 +539,7 @@ async function resetTechnicalSlice(): Promise<void> {
             :key="tier"
             :class="{ selected: selectedPrincipal === tier }"
             type="button"
+            :disabled="actionLocked"
             @click="selectedPrincipal = tier"
           >
             {{ tier * 10 }}万
@@ -371,6 +553,7 @@ async function resetTechnicalSlice(): Promise<void> {
             :key="period"
             :class="{ selected: selectedPeriod === period }"
             type="button"
+            :disabled="actionLocked"
             @click="selectedPeriod = period"
           >
             {{ period }}大轮
@@ -378,11 +561,11 @@ async function resetTechnicalSlice(): Promise<void> {
         </div>
 
         <div class="modal-actions">
-          <button class="secondary-action" type="button" @click="skipStock">跳过</button>
+          <button class="secondary-action" type="button" :disabled="actionLocked" @click="skipStock">跳过</button>
           <button
             class="primary-action"
             type="button"
-            :disabled="activePlayer.cash < selectedPrincipal"
+            :disabled="actionLocked || activePlayer.cash < selectedPrincipal"
             @click="buyStock"
           >
             投资 {{ selectedPrincipal * 10 }}万元
@@ -405,11 +588,11 @@ async function resetTechnicalSlice(): Promise<void> {
           <div><span>购买后余额</span><strong>{{ (activePlayer.cash - pending.price) * 10 }}万元</strong></div>
         </div>
         <div class="modal-actions">
-          <button class="secondary-action" type="button" @click="skipProperty">暂不购买</button>
+          <button class="secondary-action" type="button" :disabled="actionLocked" @click="skipProperty">暂不购买</button>
           <button
             class="primary-action"
             type="button"
-            :disabled="activePlayer.cash < pending.price"
+            :disabled="actionLocked || activePlayer.cash < pending.price"
             @click="buyProperty"
           >
             确认购买
@@ -431,11 +614,11 @@ async function resetTechnicalSlice(): Promise<void> {
           <div><span>升级后余额</span><strong>{{ (activePlayer.cash - pending.cost) * 10 }}万元</strong></div>
         </div>
         <div class="modal-actions">
-          <button class="secondary-action" type="button" @click="skipUpgrade">保持现状</button>
+          <button class="secondary-action" type="button" :disabled="actionLocked" @click="skipUpgrade">保持现状</button>
           <button
             class="primary-action"
             type="button"
-            :disabled="activePlayer.cash < pending.cost"
+            :disabled="actionLocked || activePlayer.cash < pending.cost"
             @click="upgradeProperty"
           >
             升级一级
@@ -451,7 +634,7 @@ async function resetTechnicalSlice(): Promise<void> {
         <strong class="result-amount">
           {{ snapshot.lastEvents.map(eventAmount).find(Boolean) }}
         </strong>
-        <button class="primary-action full" type="button" @click="acknowledgeResult">知道了</button>
+        <button class="primary-action full" type="button" :disabled="actionLocked" @click="acknowledgeResult">知道了</button>
       </article>
 
       <article v-else-if="pending.type === 'CARD_DRAW'" class="decision-modal result-modal">
@@ -459,7 +642,7 @@ async function resetTechnicalSlice(): Promise<void> {
         <div class="result-icon card">▤</div>
         <h2>{{ pending.title }}</h2>
         <p>{{ pending.description }}</p>
-        <button class="primary-action full" type="button" @click="acknowledgeResult">收入手牌</button>
+        <button class="primary-action full" type="button" :disabled="actionLocked" @click="acknowledgeResult">收入手牌</button>
       </article>
 
       <article v-else-if="pending.type === 'CARD_REPLACEMENT'" class="decision-modal replacement-modal">
@@ -472,6 +655,7 @@ async function resetTechnicalSlice(): Promise<void> {
             :key="card.instanceId"
             type="button"
             class="replacement-card"
+            :disabled="actionLocked"
             @click="discardCard(card.instanceId)"
           >
             <strong>{{ cardName(card.instanceId) }}</strong>
@@ -482,11 +666,71 @@ async function resetTechnicalSlice(): Promise<void> {
       </article>
     </section>
 
+    <section
+      v-if="handoffPending && !resumePromptOpen"
+      class="handoff-backdrop"
+      aria-modal="true"
+      role="dialog"
+    >
+      <article class="handoff-card" :style="{ '--player-color': activePlayer.color }">
+        <span class="eyebrow">Pass the device</span>
+        <div class="handoff-route">
+          <span>{{ handoffFromPlayer?.name ?? '上一位玩家' }}</span>
+          <i>→</i>
+          <strong>{{ activePlayer.name }}</strong>
+        </div>
+        <h2>请将设备交给 {{ activePlayer.name }}</h2>
+        <p>上一位玩家的手牌和资产入口已隐藏。确认设备已交接后，再开始新的回合。</p>
+        <button class="primary-action handoff-action" type="button" :disabled="actionLocked" @click="confirmHandoff">
+          {{ activePlayer.name }} 已准备好
+        </button>
+      </article>
+    </section>
+
+    <section
+      v-if="resumePromptOpen"
+      class="session-entry-backdrop"
+      aria-modal="true"
+      role="dialog"
+    >
+      <article class="session-entry-card">
+        <span class="eyebrow">Stable save detected</span>
+        <h1>继续上次游戏？</h1>
+        <p>存档只记录完整回合边界，不会恢复到投骰、移动或结算动画中间。</p>
+        <div class="session-summary">
+          <div><span>当前大轮</span><strong>第 {{ game.round }} 大轮</strong></div>
+          <div><span>当前玩家</span><strong>{{ activePlayer.name }}</strong></div>
+          <div><span>保存时间</span><strong>{{ savedAtText }}</strong></div>
+          <div><span>恢复节点</span><strong>{{ snapshot.flow === 'awaitingHandoff' ? '玩家交接' : '回合开始' }}</strong></div>
+        </div>
+        <p v-if="props.initialLoad.migrated" class="migration-note">旧版存档将在继续后升级到新的完整性校验格式。</p>
+        <div class="session-entry-actions">
+          <button class="secondary-action" type="button" :disabled="actionLocked" @click="resetTechnicalSlice">重新开始</button>
+          <button class="primary-action" type="button" :disabled="actionLocked" @click="continueSavedGame">继续游戏</button>
+        </div>
+      </article>
+    </section>
+
     <div v-if="snapshot.error" class="error-toast" role="alert">
       {{ snapshot.error }}
       <button type="button" @click="session.clearError()">×</button>
     </div>
 
-    <div class="build-badge">PHASE 1.1 · 8 NODE TECHNICAL SLICE</div>
+    <div v-else-if="storageError" class="error-toast" role="alert">
+      {{ storageError }}
+      <button type="button" @click="storageError = ''">×</button>
+    </div>
+
+    <div v-else-if="presentationError" class="warning-toast" role="status">
+      {{ presentationError }}
+      <button type="button" @click="presentationError = ''">×</button>
+    </div>
+
+    <div v-if="recoveryNotice" class="recovery-toast" role="status">
+      {{ recoveryNotice }}
+      <button type="button" @click="recoveryNotice = null">知道了</button>
+    </div>
+
+    <div class="build-badge">PHASE 1.4 · STABLE HANDOFF</div>
   </main>
 </template>

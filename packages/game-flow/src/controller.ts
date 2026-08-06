@@ -10,7 +10,8 @@ import type { RandomProvider } from '@bigmoney/game-random';
 import { createActor } from 'xstate';
 import {
   technicalSliceFlowMachine,
-  type FlowPhase
+  type FlowPhase,
+  type StableFlowPhase
 } from './machine';
 
 export type PresentationCueKind =
@@ -56,13 +57,18 @@ export class TechnicalSliceSession {
   private revision = 0;
   private domainRevision = 0;
   private cueSequence = 1;
+  private operationInProgress = false;
 
   constructor(
     private readonly random: RandomProvider,
-    initialState: GameState = createTechnicalSliceState()
+    initialState: GameState = createTechnicalSliceState(),
+    initialFlow: StableFlowPhase = 'turnReady'
   ) {
     this.gameState = structuredClone(initialState);
     this.actor.start();
+    if (initialFlow === 'awaitingHandoff') {
+      this.actor.send({ type: 'RESTORE_HANDOFF' });
+    }
   }
 
   getSnapshot(): TechnicalSliceSessionSnapshot {
@@ -91,6 +97,15 @@ export class TechnicalSliceSession {
   clearError(): void {
     this.error = null;
     this.emit();
+  }
+
+
+  confirmHandoff(): void {
+    this.run(() => {
+      this.expectPhase('awaitingHandoff');
+      this.actor.send({ type: 'HANDOFF_CONFIRMED' });
+      this.bump();
+    });
   }
 
   roll(): void {
@@ -403,12 +418,17 @@ export class TechnicalSliceSession {
   }
 
   private run(operation: () => void): void {
+    if (this.operationInProgress) return;
+    this.operationInProgress = true;
+
     try {
       this.error = null;
       operation();
     } catch (error) {
       this.error = error instanceof Error ? error.message : '未知流程错误';
       this.emit();
+    } finally {
+      this.operationInProgress = false;
     }
   }
 

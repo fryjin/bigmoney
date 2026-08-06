@@ -4,8 +4,8 @@ import './ui/theme/global.css';
 import { loadTechnicalSliceSave } from './session/persistence';
 
 async function bootstrap(): Promise<void> {
-  const initialSave = await loadTechnicalSliceSave();
-  createApp(App, { initialSave }).mount('#app');
+  const initialLoad = await loadTechnicalSliceSave();
+  createApp(App, { initialLoad }).mount('#app');
 }
 
 void bootstrap();

@@ -1,7 +1,9 @@
 import { setup } from 'xstate';
 
+export type StableFlowPhase = 'turnReady' | 'awaitingHandoff';
+
 export type FlowPhase =
-  | 'turnReady'
+  | StableFlowPhase
   | 'presentingRoll'
   | 'moving'
   | 'presentingMove'
@@ -17,6 +19,8 @@ export type FlowPhase =
   | 'presentingTurnEnd';
 
 export type FlowMachineEvent =
+  | { type: 'RESTORE_HANDOFF' }
+  | { type: 'HANDOFF_CONFIRMED' }
   | { type: 'ROLL_STARTED' }
   | { type: 'ROLL_PRESENTED' }
   | { type: 'STEP_STARTED' }
@@ -42,12 +46,18 @@ export const technicalSliceFlowMachine = setup({
     events: {} as FlowMachineEvent
   }
 }).createMachine({
-  id: 'bigmoneyPhase11Flow',
+  id: 'bigmoneyPhase14Flow',
   initial: 'turnReady',
   states: {
     turnReady: {
       on: {
+        RESTORE_HANDOFF: 'awaitingHandoff',
         ROLL_STARTED: 'presentingRoll'
+      }
+    },
+    awaitingHandoff: {
+      on: {
+        HANDOFF_CONFIRMED: 'turnReady'
       }
     },
     presentingRoll: {
@@ -119,7 +129,7 @@ export const technicalSliceFlowMachine = setup({
     },
     presentingTurnEnd: {
       on: {
-        TURN_PRESENTED: 'turnReady'
+        TURN_PRESENTED: 'awaitingHandoff'
       }
     }
   }

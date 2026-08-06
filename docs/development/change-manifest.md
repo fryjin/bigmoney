@@ -51,3 +51,39 @@ packages/game-content/src/maps/technical-slice.json
 ```
 
 完整包内已不包含以上文件；使用GitHub网页覆盖上传时需要手动删除。
+
+# Phase 1.4 增量变更
+
+## 回合流程
+
+- 新增 `awaitingHandoff` 稳定状态；
+- 新增 `RESTORE_HANDOFF` 与 `HANDOFF_CONFIRMED`；
+- 回合结束表现完成后进入设备交接，而不是直接开放下一玩家投骰；
+- Session 增加命令重入保护。
+
+## Web交互
+
+- 新增玩家交接遮罩；
+- 交接期间隐藏手牌、持仓、现金与操作台；
+- 结束回合按钮显示下一玩家；
+- 所有领域命令入口增加重复点击保护；
+- 场景表现异常时自动降级并继续流程；
+- 新增继续游戏 / 重新开始入口。
+
+## 存档
+
+- Schema v1 → v2 自动迁移；
+- 新增稳定Flow、交接来源和完整性标记；
+- 新增结构校验与损坏存档隔离；
+- `turnReady` 和 `awaitingHandoff` 为当前稳定保存节点。
+
+## 测试
+
+- 新增存档迁移、完整性和隔离测试；
+- 新增交接确认、交接恢复与连续八回合流程测试。
+
+## Codex交接
+
+- 新增 `CODEX_START_HERE.md`；
+- 新增 `CODEX_TASK_PHASE_2_0.md`；
+- 新增 `npm run codex:preflight`。

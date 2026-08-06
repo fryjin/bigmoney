@@ -28,3 +28,11 @@
 - `development/cloudflare-first-deployment-checklist.md`：Cloudflare Pages 首次部署清单
 - `development/ipad-runtime-acceptance.md`：iPad 真机验收表
 - `development/phase-1.3-validation.md`：生成环境校验记录
+
+
+## Phase 1.4 与 Codex
+
+- `development/phase-1.4-technical-slice-closeout.md`：回合交接、重复操作保护和存档恢复。
+- `development/phase-1.4-validation.md`：本轮校验与上传后验收。
+- `../CODEX_START_HERE.md`：本地 Codex 起点。
+- `../CODEX_TASK_PHASE_2_0.md`：Phase 2.0A 任务边界。

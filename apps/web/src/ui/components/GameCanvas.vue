@@ -183,7 +183,7 @@ onBeforeUnmount(() => {
       {{ failedAssets.length }}项视觉资源使用降级显示
     </div>
 
-    <div class="phase-badge">PHASE 1.3 · DEPLOYMENT READY</div>
+    <div class="phase-badge">PHASE 1.4 · STABLE HANDOFF</div>
   </div>
 </template>
 
