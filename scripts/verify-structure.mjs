@@ -1,7 +1,8 @@
 import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const root = decodeURIComponent(new URL('..', import.meta.url).pathname);
+const root = fileURLToPath(new URL('..', import.meta.url));
 const requiredFiles = [
   'package.json',
   'tsconfig.base.json',
@@ -69,10 +70,11 @@ function walk(dir) {
       continue;
     }
     if (!/\.(ts|vue|json|mjs)$/.test(entry)) continue;
+    const relativePath = relative(root, full).replaceAll('\\', '/');
     const text = readFileSync(full, 'utf8');
-    if (relative(root, full) === 'scripts/verify-structure.mjs') continue;
+    if (relativePath === 'scripts/verify-structure.mjs') continue;
     if (text.includes('@town-board/')) {
-      failures.push(`仍包含旧命名空间: ${relative(root, full)}`);
+      failures.push(`仍包含旧命名空间: ${relativePath}`);
     }
   }
 }

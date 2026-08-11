@@ -5,8 +5,9 @@ import {
   statSync
 } from 'node:fs';
 import { join, relative } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const root = decodeURIComponent(new URL('..', import.meta.url).pathname);
+const root = fileURLToPath(new URL('..', import.meta.url));
 const dist = join(root, 'apps/web/dist');
 const failures = [];
 
