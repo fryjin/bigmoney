@@ -190,6 +190,61 @@ describe('forced payment flow orchestration', () => {
     expect(session.getSnapshot().flow).toBe('finished');
     expect(session.getSnapshot().game).toEqual(snapshot.game);
   });
+
+  it('restores awaiting liquidation without a cue or changing the canonical payment', () => {
+    const source = createRentSession((state) => {
+      state.players[1]!.cash = 10;
+      state.properties.A2!.ownerId = 'P2';
+    });
+    reachDestination(source);
+    const savedGame = source.getSnapshot().game;
+
+    const restored = new TechnicalSliceSession(
+      new SequenceRandom([1]),
+      savedGame,
+      'awaitingLiquidation'
+    );
+    const snapshot = restored.getSnapshot();
+
+    expect(snapshot.flow).toBe('awaitingLiquidation');
+    expect(snapshot.cue).toBeNull();
+    expect(snapshot.lastEvents).toEqual([]);
+    expect(snapshot.game).toEqual(savedGame);
+    expect(snapshot.game.pendingInteraction).toMatchObject({
+      type: 'LIQUIDATION',
+      payment: { id: 'PAYMENT-0001' }
+    });
+
+    restored.roll();
+    restored.endTurn();
+    expect(restored.getSnapshot().flow).toBe('awaitingLiquidation');
+    expect(restored.getSnapshot().game).toEqual(savedGame);
+  });
+
+  it('restores finished without a cue or changing the winner state', () => {
+    const savedGame = createTechnicalSliceState();
+    savedGame.players[1]!.bankrupt = true;
+    savedGame.status = 'FINISHED';
+    savedGame.winnerId = 'P1';
+
+    const restored = new TechnicalSliceSession(
+      new SequenceRandom([1]),
+      savedGame,
+      'finished'
+    );
+    const snapshot = restored.getSnapshot();
+
+    expect(snapshot.flow).toBe('finished');
+    expect(snapshot.cue).toBeNull();
+    expect(snapshot.lastEvents).toEqual([]);
+    expect(snapshot.game).toEqual(savedGame);
+    expect(snapshot.game.winnerId).toBe('P1');
+
+    restored.roll();
+    restored.endTurn();
+    expect(restored.getSnapshot().flow).toBe('finished');
+    expect(restored.getSnapshot().game).toEqual(savedGame);
+  });
 });
 
 function createRentSession(configure: (state: GameState) => void): TechnicalSliceSession {

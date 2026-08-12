@@ -27,6 +27,8 @@ export type FlowPhase =
 
 export type FlowMachineEvent =
   | { type: 'RESTORE_HANDOFF' }
+  | { type: 'RESTORE_LIQUIDATION' }
+  | { type: 'RESTORE_FINISHED' }
   | { type: 'HANDOFF_CONFIRMED' }
   | { type: 'ROLL_STARTED' }
   | { type: 'ROLL_PRESENTED' }
@@ -67,6 +69,8 @@ export const technicalSliceFlowMachine = setup({
     turnReady: {
       on: {
         RESTORE_HANDOFF: 'awaitingHandoff',
+        RESTORE_LIQUIDATION: 'awaitingLiquidation',
+        RESTORE_FINISHED: 'finished',
         ROLL_STARTED: 'presentingRoll'
       }
     },

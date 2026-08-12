@@ -69,6 +69,12 @@ export class TechnicalSliceSession {
     if (initialFlow === 'awaitingHandoff') {
       this.actor.send({ type: 'RESTORE_HANDOFF' });
     }
+    if (initialFlow === 'awaitingLiquidation') {
+      this.actor.send({ type: 'RESTORE_LIQUIDATION' });
+    }
+    if (initialFlow === 'finished') {
+      this.actor.send({ type: 'RESTORE_FINISHED' });
+    }
   }
 
   getSnapshot(): TechnicalSliceSessionSnapshot {
