@@ -3,7 +3,7 @@ import type { PlayerState } from '@bigmoney/game-core';
 
 defineProps<{
   players: PlayerState[];
-  activePlayerId: string;
+  activePlayerId: string | null;
   propertyCounts: Record<string, number>;
 }>();
 
@@ -18,13 +18,13 @@ function formatMoney(value: number): string {
       v-for="player in players"
       :key="player.id"
       class="player-chip"
-      :class="{ active: player.id === activePlayerId }"
+      :class="{ active: !player.bankrupt && player.id === activePlayerId, bankrupt: player.bankrupt }"
       :style="{ '--player-color': player.color }"
     >
       <span class="player-avatar">{{ player.id }}</span>
       <span class="player-chip-copy">
         <strong>{{ player.name }}</strong>
-        <small>{{ formatMoney(player.cash) }}</small>
+        <small>{{ player.bankrupt ? '已破产' : formatMoney(player.cash) }}</small>
       </span>
       <span class="player-mini-stat">
         {{ propertyCounts[player.id] ?? 0 }}地 · {{ player.stocks.length }}股
