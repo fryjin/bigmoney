@@ -39,20 +39,25 @@ import {
   saveTechnicalSliceSave,
   type TechnicalSliceLoadResult
 } from '../session/persistence';
+import type { BrowserTestFixture } from '../session/browserTestFixtures';
+import { renderBrowserTestGameText } from '../session/browserTestProjection';
 
 const props = defineProps<{
   initialLoad: TechnicalSliceLoadResult;
+  browserTestFixture: BrowserTestFixture | null;
 }>();
 
 const initialSave = props.initialLoad.save;
 const random = initialSave
   ? SeededRandom.fromSnapshot(initialSave.random)
-  : new SeededRandom(20260805);
+  : props.browserTestFixture
+    ? SeededRandom.fromSnapshot(props.browserTestFixture.random)
+    : new SeededRandom(20260805);
 
 const session = new TechnicalSliceSession(
   random,
-  initialSave?.game ?? createTechnicalSliceState(),
-  initialSave?.flow ?? 'turnReady'
+  initialSave?.game ?? props.browserTestFixture?.game ?? createTechnicalSliceState(),
+  initialSave?.flow ?? props.browserTestFixture?.flow ?? 'turnReady'
 );
 
 const snapshot = shallowRef<TechnicalSliceSessionSnapshot>(session.getSnapshot());
@@ -72,6 +77,7 @@ const recoveryNotice = ref(
 const storageError = ref('');
 const presentationError = ref('');
 const presentationReadyCueId = ref<number | null>(null);
+const handoffActivationPending = ref(false);
 const restoredHandoffFromPlayerId = ref<PlayerId | null>(
   initialSave?.handoffFromPlayerId ?? null
 );
@@ -166,6 +172,12 @@ const privateInfoHidden = computed(
     snapshot.value.flow === 'presentingTurnEnd' ||
     handoffPending.value
 );
+const renderBrowserTestSnapshot = () =>
+  renderBrowserTestGameText(session.getSnapshot(), privateInfoHidden.value);
+
+if (import.meta.env.MODE === 'browser-test') {
+  window.render_game_to_text = renderBrowserTestSnapshot;
+}
 const busy = computed(
   () => snapshot.value.cue !== null || actionLocked.value || privateInfoHidden.value
 );
@@ -337,6 +349,9 @@ watch(statusMessage, () => {
 });
 
 onBeforeUnmount(() => {
+  if (window.render_game_to_text === renderBrowserTestSnapshot) {
+    delete window.render_game_to_text;
+  }
   unsubscribe();
   session.destroy();
 });
@@ -504,8 +519,17 @@ function confirmLiquidation(): void {
 function acknowledgePresentationResult(): void {
   const cueId = presentationReadyCueId.value;
   if (cueId === null) return;
+  const delayHandoffActivation = presentingBankruptcy.value;
+  if (delayHandoffActivation) {
+    handoffActivationPending.value = true;
+  }
   presentationReadyCueId.value = null;
   performAction(() => session.presentationDone(cueId));
+  if (delayHandoffActivation) {
+    window.requestAnimationFrame(() => {
+      handoffActivationPending.value = false;
+    });
+  }
 }
 
 function continueSavedGame(): void {
@@ -902,7 +926,7 @@ function isStableFlowPhase(flow: string): flow is StableFlowPhase {
     </section>
 
     <section
-      v-if="handoffPending && !resumePromptOpen"
+      v-if="handoffPending && !handoffActivationPending && !resumePromptOpen"
       class="handoff-backdrop"
       aria-modal="true"
       role="dialog"
