@@ -69,6 +69,12 @@ export class TechnicalSliceSession {
     if (initialFlow === 'awaitingHandoff') {
       this.actor.send({ type: 'RESTORE_HANDOFF' });
     }
+    if (initialFlow === 'awaitingLiquidation') {
+      this.actor.send({ type: 'RESTORE_LIQUIDATION' });
+    }
+    if (initialFlow === 'finished') {
+      this.actor.send({ type: 'RESTORE_FINISHED' });
+    }
   }
 
   getSnapshot(): TechnicalSliceSessionSnapshot {
@@ -224,6 +230,29 @@ export class TechnicalSliceSession {
     });
   }
 
+  confirmLiquidation(paymentId: string, propertyIds: string[]): void {
+    this.run(() => {
+      this.expectPhase('awaitingLiquidation');
+      const pending = this.gameState.pendingInteraction;
+      const playerId = this.activePlayerId();
+      if (
+        !pending ||
+        pending.type !== 'LIQUIDATION' ||
+        pending.playerId !== playerId ||
+        pending.payment.id !== paymentId
+      ) {
+        throw new Error('当前没有可确认的清算付款。');
+      }
+
+      const result = executeCommand(
+        this.gameState,
+        { type: 'CONFIRM_LIQUIDATION', playerId, paymentId, propertyIds },
+        this.random
+      );
+      this.commitLiquidation(result);
+    });
+  }
+
   endTurn(): void {
     this.run(() => {
       this.expectPhase('turnEnd');
@@ -268,6 +297,34 @@ export class TechnicalSliceSession {
 
       if (phase === 'presentingDestination') {
         this.actor.send({ type: 'DESTINATION_PRESENTED' });
+        this.bump();
+        return;
+      }
+
+      if (phase === 'presentingLiquidation') {
+        if (this.hasResultInteraction()) {
+          this.actor.send({ type: 'LIQUIDATION_RESULT_REQUIRED' });
+        } else {
+          this.actor.send({ type: 'LIQUIDATION_PRESENTED' });
+        }
+        this.bump();
+        return;
+      }
+
+      if (phase === 'presentingBankruptcy') {
+        const playerId = this.activePlayerId();
+        const result = executeCommand(
+          this.gameState,
+          { type: 'ADVANCE_AFTER_BANKRUPTCY', playerId },
+          this.random
+        );
+        this.actor.send({ type: 'BANKRUPTCY_PRESENTED' });
+        this.commitWithoutCue(result);
+        return;
+      }
+
+      if (phase === 'presentingFinished') {
+        this.actor.send({ type: 'FINISHED_PRESENTED' });
         this.bump();
         return;
       }
@@ -333,7 +390,25 @@ export class TechnicalSliceSession {
     this.revision += 1;
     this.domainRevision += 1;
 
+    this.routeAfterDestination(result);
+  }
+
+  private routeAfterDestination(result: CommandResult): void {
+    if (this.hasEvent(result.events, 'GAME_FINISHED')) {
+      this.presentFinished(result.events);
+      return;
+    }
+    if (this.hasEvent(result.events, 'PLAYER_BANKRUPT')) {
+      this.presentBankruptcy(result.events);
+      return;
+    }
+
     const pendingType = this.gameState.pendingInteraction?.type;
+    if (pendingType === 'LIQUIDATION') {
+      this.actor.send({ type: 'LIQUIDATION_REQUIRED' });
+      this.emit();
+      return;
+    }
     if (pendingType === 'PROPERTY_PURCHASE') {
       this.actor.send({ type: 'PROPERTY_REQUIRED' });
       this.emit();
@@ -367,6 +442,63 @@ export class TechnicalSliceSession {
 
     this.actor.send({ type: 'DESTINATION_COMPLETE' });
     this.emit();
+  }
+
+  private commitLiquidation(result: CommandResult): void {
+    this.gameState = result.nextState;
+    this.lastEvents = result.events;
+    this.revision += 1;
+    this.domainRevision += 1;
+
+    if (this.hasEvent(result.events, 'GAME_FINISHED')) {
+      this.presentFinished(result.events);
+      return;
+    }
+    if (this.hasEvent(result.events, 'PLAYER_BANKRUPT')) {
+      this.presentBankruptcy(result.events);
+      return;
+    }
+    if (this.gameState.pendingInteraction?.type === 'LIQUIDATION') {
+      this.actor.send({ type: 'LIQUIDATION_REQUIRED' });
+      this.emit();
+      return;
+    }
+    if (this.hasEvent(result.events, 'PAYMENT_COMPLETED')) {
+      this.actor.send({ type: 'LIQUIDATION_COMPLETED' });
+      this.cue = this.createCue('DESTINATION', result.events);
+      this.emit();
+      return;
+    }
+
+    throw new Error('清算命令没有返回可编排的领域结果。');
+  }
+
+  private presentBankruptcy(events: DomainEvent[]): void {
+    this.actor.send({ type: 'BANKRUPTCY_PRESENTATION_REQUIRED' });
+    this.cue = this.createCue('DESTINATION', events);
+    this.emit();
+  }
+
+  private presentFinished(events: DomainEvent[]): void {
+    this.actor.send({ type: 'FINISHED_PRESENTATION_REQUIRED' });
+    this.cue = this.createCue('DESTINATION', events);
+    this.emit();
+  }
+
+  private hasEvent<T extends DomainEvent['type']>(
+    events: DomainEvent[],
+    type: T
+  ): events is Extract<DomainEvent, { type: T }>[] {
+    return events.some((event) => event.type === type);
+  }
+
+  private hasResultInteraction(): boolean {
+    const pendingType = this.gameState.pendingInteraction?.type;
+    return (
+      pendingType === 'EVENT_RESULT' ||
+      pendingType === 'CARD_DRAW' ||
+      pendingType === 'CARD_REPLACEMENT'
+    );
   }
 
   private commit(result: CommandResult, kind: PresentationCueKind): void {

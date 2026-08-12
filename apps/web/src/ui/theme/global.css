@@ -38,8 +38,8 @@ button {
   position: relative;
   width: 100%;
   height: 100%;
-  min-width: 900px;
-  min-height: 620px;
+  min-width: 0;
+  min-height: 100%;
   overflow: hidden;
   isolation: isolate;
   background:
@@ -121,6 +121,16 @@ button {
 
 .player-chip.active::after {
   opacity: 1;
+}
+
+.player-chip.bankrupt {
+  filter: grayscale(0.72);
+  opacity: 0.45;
+}
+
+.player-chip.bankrupt .player-chip-copy small {
+  color: #9a5f5a;
+  font-weight: 850;
 }
 
 .player-avatar,
@@ -490,6 +500,140 @@ button {
   letter-spacing: -0.03em;
 }
 
+.liquidation-modal {
+  width: min(680px, calc(100vw - 56px));
+}
+
+.liquidation-summary {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin: 16px 0 0;
+}
+
+.liquidation-summary div {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  padding: 12px;
+  border-radius: 15px;
+  background: #edf2ef;
+}
+
+.liquidation-summary dt,
+.liquidation-summary dd {
+  margin: 0;
+}
+
+.liquidation-summary dt,
+.liquidation-property-value small {
+  color: #718084;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.liquidation-summary dd {
+  font-size: 14px;
+  font-weight: 900;
+}
+
+.liquidation-shortfall {
+  background: #f7e7dc !important;
+  color: #9c5145;
+}
+
+.liquidation-candidates {
+  display: grid;
+  gap: 8px;
+  max-height: min(34vh, 278px);
+  overflow: auto;
+  padding: 1px 2px 3px;
+}
+
+.liquidation-property {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 11px;
+  width: 100%;
+  min-height: 68px;
+  padding: 11px 13px;
+  border: 1px solid rgba(34, 52, 58, 0.1);
+  border-radius: 16px;
+  background: #f0f4f1;
+  text-align: left;
+  cursor: pointer;
+}
+
+.liquidation-property:hover:not(:disabled),
+.liquidation-property:focus-visible {
+  border-color: #4c9c8a;
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(76, 156, 138, 0.18);
+}
+
+.liquidation-property.selected {
+  border-color: #4c9c8a;
+  background: #dcece5;
+}
+
+.liquidation-property:disabled {
+  cursor: wait;
+  opacity: 0.62;
+}
+
+.liquidation-property-check {
+  display: grid;
+  width: 26px;
+  height: 26px;
+  place-items: center;
+  border: 2px solid #98aaa6;
+  border-radius: 9px;
+  color: #fff;
+  font-size: 15px;
+  font-weight: 900;
+}
+
+.liquidation-property.selected .liquidation-property-check {
+  border-color: #3f8b79;
+  background: #3f8b79;
+}
+
+.liquidation-property-copy,
+.liquidation-property-value {
+  display: grid;
+  gap: 3px;
+}
+
+.liquidation-property-copy small {
+  color: #718084;
+  font-size: 11px;
+}
+
+.liquidation-property-value {
+  justify-items: end;
+  text-align: right;
+}
+
+.liquidation-property-value strong {
+  font-size: 13px;
+}
+
+.liquidation-quote {
+  margin-top: 12px;
+}
+
+.liquidation-note {
+  margin: 13px 0 0;
+  color: #76613b;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.liquidation-submit {
+  min-width: 168px;
+}
+
 .modal-lead,
 .decision-modal > p {
   color: #607277;
@@ -852,7 +996,8 @@ button {
 }
 
 .handoff-backdrop,
-.session-entry-backdrop {
+.session-entry-backdrop,
+.presentation-backdrop {
   position: absolute;
   z-index: 75;
   inset: 0;
@@ -877,13 +1022,92 @@ button {
     rgba(25, 41, 47, 0.8);
 }
 
+.presentation-backdrop {
+  z-index: 82;
+}
+
 .handoff-card,
-.session-entry-card {
+.session-entry-card,
+.presentation-card {
   border: 1px solid rgba(255, 255, 255, 0.56);
   background: rgba(252, 253, 249, 0.97);
   box-shadow: 0 34px 100px rgba(20, 36, 42, 0.34);
   backdrop-filter: blur(22px);
   -webkit-backdrop-filter: blur(22px);
+}
+
+.presentation-card {
+  width: min(440px, calc(100vw - 56px));
+  padding: 30px;
+  border-radius: 32px;
+  text-align: center;
+}
+
+.presentation-card h2 {
+  margin: 10px 0 8px;
+  color: #22343a;
+  font-size: 29px;
+  letter-spacing: -0.04em;
+}
+
+.presentation-card > p {
+  margin: 8px 0 0;
+  color: #66777b;
+  line-height: 1.6;
+}
+
+.presentation-icon {
+  display: grid;
+  width: 76px;
+  height: 76px;
+  margin: 16px auto;
+  place-items: center;
+  border-radius: 24px;
+  background: #f7d9d2;
+  color: #b64f42;
+  font-size: 42px;
+  font-weight: 900;
+}
+
+.winner-card {
+  --winner-color: #4c9c8a;
+}
+
+.winner-icon {
+  background: color-mix(in srgb, var(--winner-color) 22%, #fff4cb);
+  color: var(--winner-color);
+}
+
+.winner-summary {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 9px;
+  margin: 20px 0 0;
+  text-align: left;
+}
+
+.winner-summary div {
+  display: grid;
+  gap: 5px;
+  padding: 12px;
+  border-radius: 15px;
+  background: #edf2ef;
+}
+
+.winner-summary dt,
+.winner-summary dd {
+  margin: 0;
+}
+
+.winner-summary dt {
+  color: #718084;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.winner-summary dd {
+  font-size: 14px;
+  font-weight: 900;
 }
 
 .handoff-card {
@@ -1066,6 +1290,123 @@ button {
   .session-entry-card,
   .handoff-card {
     transform: scale(0.94);
+  }
+}
+
+@media (max-width: 640px) {
+  .players-bar {
+    left: 12px;
+    right: 12px;
+    justify-content: center;
+    gap: 6px;
+    transform: none;
+  }
+
+  .player-chip {
+    grid-template-columns: 34px minmax(0, 1fr);
+    flex: 1 1 0;
+    min-width: 0;
+    padding-right: 9px;
+  }
+
+  .player-avatar {
+    width: 34px;
+    height: 34px;
+  }
+
+  .player-mini-stat {
+    display: none;
+  }
+
+  .player-chip-copy strong,
+  .player-chip-copy small {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .current-player-card {
+    left: 12px;
+    bottom: 98px;
+    width: min(220px, calc(100% - 24px));
+  }
+
+  .status-pill {
+    bottom: 80px;
+    max-width: calc(100% - 24px);
+    padding: 9px 13px;
+    font-size: 12px;
+  }
+
+  .control-dock {
+    width: calc(100% - 24px);
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 6px;
+    min-height: 0;
+    padding: 7px;
+  }
+
+  .dock-button {
+    min-width: 78px;
+    padding: 8px 10px;
+  }
+
+  .dice-button {
+    min-width: 116px;
+    padding-right: 14px;
+  }
+
+  .end-turn {
+    min-width: 154px;
+  }
+
+  .modal-backdrop,
+  .handoff-backdrop,
+  .session-entry-backdrop,
+  .presentation-backdrop {
+    padding: 12px;
+  }
+
+  .decision-modal,
+  .liquidation-modal,
+  .handoff-card,
+  .session-entry-card,
+  .presentation-card {
+    width: min(100%, calc(100vw - 24px));
+    max-height: calc(100vh - 24px);
+    padding: 20px;
+    border-radius: 24px;
+    transform: none;
+  }
+
+  .liquidation-summary,
+  .winner-summary {
+    grid-template-columns: 1fr;
+  }
+
+  .liquidation-candidates {
+    max-height: min(28vh, 230px);
+  }
+
+  .liquidation-property {
+    grid-template-columns: 28px minmax(0, 1fr) auto;
+    min-height: 64px;
+    padding: 10px;
+  }
+
+  .liquidation-property-value strong {
+    font-size: 12px;
+  }
+
+  .modal-actions {
+    display: grid;
+  }
+
+  .modal-actions .primary-action,
+  .modal-actions .secondary-action,
+  .liquidation-submit {
+    width: 100%;
   }
 }
 

@@ -10,6 +10,9 @@ import { animate } from 'animejs';
 import { technicalSliceContent } from '@bigmoney/game-content';
 import {
   createTechnicalSliceState,
+  getLiquidationCandidates,
+  getNextActivePlayerIndex,
+  quoteLiquidation,
   type DomainEvent,
   type GameState,
   type PlayerId
@@ -25,6 +28,7 @@ import GameCanvas from './components/GameCanvas.vue';
 import PlayerBar from './components/PlayerBar.vue';
 import ControlDock from './components/ControlDock.vue';
 import ContextPanel from './components/ContextPanel.vue';
+import LiquidationModal from './components/LiquidationModal.vue';
 import {
   getScenePresentationPreferences,
   presentSceneCue
@@ -35,20 +39,25 @@ import {
   saveTechnicalSliceSave,
   type TechnicalSliceLoadResult
 } from '../session/persistence';
+import type { BrowserTestFixture } from '../session/browserTestFixtures';
+import { renderBrowserTestGameText } from '../session/browserTestProjection';
 
 const props = defineProps<{
   initialLoad: TechnicalSliceLoadResult;
+  browserTestFixture: BrowserTestFixture | null;
 }>();
 
 const initialSave = props.initialLoad.save;
 const random = initialSave
   ? SeededRandom.fromSnapshot(initialSave.random)
-  : new SeededRandom(20260805);
+  : props.browserTestFixture
+    ? SeededRandom.fromSnapshot(props.browserTestFixture.random)
+    : new SeededRandom(20260805);
 
 const session = new TechnicalSliceSession(
   random,
-  initialSave?.game ?? createTechnicalSliceState(),
-  initialSave?.flow ?? 'turnReady'
+  initialSave?.game ?? props.browserTestFixture?.game ?? createTechnicalSliceState(),
+  initialSave?.flow ?? props.browserTestFixture?.flow ?? 'turnReady'
 );
 
 const snapshot = shallowRef<TechnicalSliceSessionSnapshot>(session.getSnapshot());
@@ -57,6 +66,8 @@ const assetsOpen = ref(false);
 const selectedStockId = ref('');
 const selectedPrincipal = ref(50);
 const selectedPeriod = ref<2 | 4 | 6>(2);
+const selectedLiquidationPropertyIds = ref<string[]>([]);
+const liquidationSubmitting = ref(false);
 const actionLocked = ref(false);
 const sessionAccepted = ref(props.initialLoad.status !== 'ready');
 const resumePromptOpen = ref(props.initialLoad.status === 'ready');
@@ -65,6 +76,8 @@ const recoveryNotice = ref(
 );
 const storageError = ref('');
 const presentationError = ref('');
+const presentationReadyCueId = ref<number | null>(null);
+const handoffActivationPending = ref(false);
 const restoredHandoffFromPlayerId = ref<PlayerId | null>(
   initialSave?.handoffFromPlayerId ?? null
 );
@@ -82,12 +95,89 @@ const nextPlayer = computed(
 );
 const pending = computed(() => game.value.pendingInteraction);
 const handoffPending = computed(() => snapshot.value.flow === 'awaitingHandoff');
+const liquidationInteraction = computed(() => {
+  const interaction = pending.value;
+  if (
+    snapshot.value.flow !== 'awaitingLiquidation' ||
+    interaction?.type !== 'LIQUIDATION'
+  ) {
+    return null;
+  }
+  return interaction;
+});
+const liquidationCandidates = computed(() => {
+  const interaction = liquidationInteraction.value;
+  if (!interaction) return [];
+
+  return getLiquidationCandidates(game.value, interaction.playerId).map((candidate) => ({
+    ...candidate,
+    name:
+      technicalSliceContent.properties.find(
+        (property) => property.id === candidate.propertyId
+      )?.name ?? candidate.propertyId,
+    level: game.value.properties[candidate.propertyId]?.level ?? 0
+  }));
+});
+const liquidationQuote = computed(() => {
+  const interaction = liquidationInteraction.value;
+  if (!interaction) return null;
+  return quoteLiquidation(
+    game.value,
+    interaction.payment.id,
+    selectedLiquidationPropertyIds.value
+  );
+});
+const liquidationReceiver = computed(() => {
+  const receiverId = liquidationInteraction.value?.payment.receiverId;
+  if (!receiverId) return null;
+  return game.value.players.find((player) => player.id === receiverId) ?? null;
+});
+const activePlayerId = computed<string | null>(() =>
+  activePlayer.value.bankrupt ? null : activePlayer.value.id
+);
+const presentingBankruptcy = computed(
+  () => snapshot.value.flow === 'presentingBankruptcy'
+);
+const presentingFinished = computed(
+  () => snapshot.value.flow === 'presentingFinished'
+);
+const isFinishedFlow = computed(
+  () => presentingFinished.value || snapshot.value.flow === 'finished'
+);
+const bankruptcyEvent = computed(() =>
+  [...snapshot.value.lastEvents]
+    .reverse()
+    .find((event): event is Extract<DomainEvent, { type: 'PLAYER_BANKRUPT' }> =>
+      event.type === 'PLAYER_BANKRUPT'
+    ) ?? null
+);
+const bankruptPlayer = computed(() => {
+  const playerId = bankruptcyEvent.value?.playerId;
+  return game.value.players.find((player) => player.id === playerId) ?? null;
+});
+const bankruptcyHandoffPlayer = computed(() => {
+  if (!bankruptPlayer.value) return null;
+  const nextIndex = getNextActivePlayerIndex(
+    game.value,
+    game.value.activePlayerIndex
+  );
+  return nextIndex === null ? null : game.value.players[nextIndex] ?? null;
+});
+const winner = computed(() =>
+  game.value.players.find((player) => player.id === game.value.winnerId) ?? null
+);
 const privateInfoHidden = computed(
   () =>
     resumePromptOpen.value ||
     snapshot.value.flow === 'presentingTurnEnd' ||
     handoffPending.value
 );
+const renderBrowserTestSnapshot = () =>
+  renderBrowserTestGameText(session.getSnapshot(), privateInfoHidden.value);
+
+if (import.meta.env.MODE === 'browser-test') {
+  window.render_game_to_text = renderBrowserTestSnapshot;
+}
 const busy = computed(
   () => snapshot.value.cue !== null || actionLocked.value || privateInfoHidden.value
 );
@@ -147,6 +237,11 @@ const statusMessage = computed(() => {
   if (interaction?.type === 'CARD_DRAW') return `获得卡牌：${interaction.title}`;
   if (interaction?.type === 'CARD_REPLACEMENT') return '手牌已满：四选三，弃置一张';
 
+  if (liquidationInteraction.value) return '资金不足：请选择要清算的地产';
+  if (presentingBankruptcy.value) return '正在呈现破产结果';
+  if (presentingFinished.value) return '正在呈现最终结果';
+  if (snapshot.value.flow === 'finished') return '游戏已结束';
+
   const last = snapshot.value.lastEvents.at(-1);
   if (last?.type === 'DICE_ROLLED') return `${activePlayer.value.name} 掷出 ${last.value} 点`;
   if (last?.type === 'LAP_REWARD_GRANTED') return '完成一圈，银行奖励800万元';
@@ -179,10 +274,21 @@ const unsubscribe = session.subscribe((next) => {
 
   if (
     next.flow === 'presentingTurnEnd' ||
-    next.flow === 'awaitingHandoff'
+    next.flow === 'awaitingHandoff' ||
+    next.flow === 'awaitingLiquidation' ||
+    next.flow === 'presentingBankruptcy' ||
+    next.flow === 'presentingFinished' ||
+    next.flow === 'finished'
   ) {
     cardsOpen.value = false;
     assetsOpen.value = false;
+  }
+
+  if (
+    next.flow !== 'presentingBankruptcy' &&
+    next.flow !== 'presentingFinished'
+  ) {
+    presentationReadyCueId.value = null;
   }
 
   if (next.domainRevision !== lastLoggedDomainRevision) {
@@ -194,10 +300,7 @@ const unsubscribe = session.subscribe((next) => {
     }
   }
 
-  if (
-    sessionAccepted.value &&
-    (next.flow === 'turnReady' || next.flow === 'awaitingHandoff')
-  ) {
+  if (sessionAccepted.value && isStableFlowPhase(next.flow)) {
     queueStableSave(next);
   }
 
@@ -218,6 +321,20 @@ watch(
   { immediate: true }
 );
 
+watch(
+  () => {
+    const interaction = liquidationInteraction.value;
+    return interaction
+      ? `${interaction.payment.id}:${snapshot.value.domainRevision}`
+      : null;
+  },
+  () => {
+    selectedLiquidationPropertyIds.value = [];
+    liquidationSubmitting.value = false;
+  },
+  { immediate: true }
+);
+
 watch(statusMessage, () => {
   if (getScenePresentationPreferences().motion === 'reduced') return;
 
@@ -232,12 +349,16 @@ watch(statusMessage, () => {
 });
 
 onBeforeUnmount(() => {
+  if (window.render_game_to_text === renderBrowserTestSnapshot) {
+    delete window.render_game_to_text;
+  }
   unsubscribe();
   session.destroy();
 });
 
 function queueStableSave(next: TechnicalSliceSessionSnapshot): void {
-  const flow = next.flow as StableFlowPhase;
+  if (!isStableFlowPhase(next.flow)) return;
+  const flow = next.flow;
   const saveKey = [
     flow,
     next.game.round,
@@ -281,6 +402,15 @@ async function runPresentation(cue: PresentationCue): Promise<void> {
   } catch (error) {
     presentationError.value = `场景表现降级完成：${errorMessage(error)}`;
   } finally {
+    const current = session.getSnapshot();
+    if (
+      current.cue?.id === cue.id &&
+      (current.flow === 'presentingBankruptcy' ||
+        current.flow === 'presentingFinished')
+    ) {
+      presentationReadyCueId.value = cue.id;
+      return;
+    }
     session.presentationDone(cue.id);
   }
 }
@@ -354,10 +484,58 @@ function discardCard(cardInstanceId: string): void {
   performAction(() => session.chooseCardToDiscard(cardInstanceId));
 }
 
+function toggleLiquidationProperty(propertyId: string): void {
+  if (liquidationSubmitting.value) return;
+  selectedLiquidationPropertyIds.value = selectedLiquidationPropertyIds.value.includes(propertyId)
+    ? selectedLiquidationPropertyIds.value.filter((id) => id !== propertyId)
+    : [...selectedLiquidationPropertyIds.value, propertyId];
+}
+
+function confirmLiquidation(): void {
+  const interaction = liquidationInteraction.value;
+  if (
+    !interaction ||
+    !liquidationQuote.value ||
+    actionLocked.value ||
+    resumePromptOpen.value ||
+    liquidationSubmitting.value ||
+    selectedLiquidationPropertyIds.value.length === 0
+  ) {
+    return;
+  }
+
+  liquidationSubmitting.value = true;
+  performAction(() => {
+    session.confirmLiquidation(
+      interaction.payment.id,
+      [...selectedLiquidationPropertyIds.value]
+    );
+    if (session.getSnapshot().error) {
+      liquidationSubmitting.value = false;
+    }
+  });
+}
+
+function acknowledgePresentationResult(): void {
+  const cueId = presentationReadyCueId.value;
+  if (cueId === null) return;
+  const delayHandoffActivation = presentingBankruptcy.value;
+  if (delayHandoffActivation) {
+    handoffActivationPending.value = true;
+  }
+  presentationReadyCueId.value = null;
+  performAction(() => session.presentationDone(cueId));
+  if (delayHandoffActivation) {
+    window.requestAnimationFrame(() => {
+      handoffActivationPending.value = false;
+    });
+  }
+}
+
 function continueSavedGame(): void {
   sessionAccepted.value = true;
   resumePromptOpen.value = false;
-  if (snapshot.value.flow === 'turnReady' || snapshot.value.flow === 'awaitingHandoff') {
+  if (isStableFlowPhase(snapshot.value.flow)) {
     queueStableSave(snapshot.value);
   }
   if (props.initialLoad.migrated && props.initialLoad.message) {
@@ -401,6 +579,15 @@ async function resetTechnicalSlice(): Promise<void> {
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : '未知错误';
 }
+
+function isStableFlowPhase(flow: string): flow is StableFlowPhase {
+  return (
+    flow === 'turnReady' ||
+    flow === 'awaitingHandoff' ||
+    flow === 'awaitingLiquidation' ||
+    flow === 'finished'
+  );
+}
 </script>
 
 <template>
@@ -409,7 +596,7 @@ function errorMessage(error: unknown): string {
 
     <PlayerBar
       :players="game.players"
-      :active-player-id="activePlayer.id"
+      :active-player-id="activePlayerId"
       :property-counts="propertyCounts"
     />
 
@@ -447,7 +634,7 @@ function errorMessage(error: unknown): string {
     </section>
 
     <ControlDock
-      v-if="!privateInfoHidden"
+      v-if="!privateInfoHidden && !isFinishedFlow"
       :can-roll="canRoll"
       :can-end-turn="canEndTurn"
       :busy="busy"
@@ -506,7 +693,7 @@ function errorMessage(error: unknown): string {
     </ContextPanel>
 
     <section
-      v-if="pending && !privateInfoHidden"
+      v-if="pending && !privateInfoHidden && pending.type !== 'LIQUIDATION'"
       class="modal-backdrop"
       aria-modal="true"
       role="dialog"
@@ -667,7 +854,79 @@ function errorMessage(error: unknown): string {
     </section>
 
     <section
-      v-if="handoffPending && !resumePromptOpen"
+      v-if="liquidationInteraction && liquidationQuote && !privateInfoHidden"
+      class="modal-backdrop"
+      aria-modal="true"
+      role="dialog"
+    >
+      <LiquidationModal
+        :payment="liquidationInteraction.payment"
+        :payer-name="activePlayer.name"
+        :receiver-name="liquidationReceiver?.name ?? null"
+        :candidates="liquidationCandidates"
+        :selected-property-ids="selectedLiquidationPropertyIds"
+        :quote="liquidationQuote"
+        :submitting="liquidationSubmitting"
+        @toggle-property="toggleLiquidationProperty"
+        @confirm="confirmLiquidation"
+      />
+    </section>
+
+    <section
+      v-if="presentingBankruptcy && bankruptPlayer && !resumePromptOpen"
+      class="presentation-backdrop"
+      aria-modal="true"
+      role="dialog"
+    >
+      <article class="presentation-card bankruptcy-card">
+        <span class="eyebrow">Bankruptcy</span>
+        <div class="presentation-icon">!</div>
+        <h2>{{ bankruptPlayer.name }} 已破产</h2>
+        <p>该玩家已退出本局。</p>
+        <p v-if="bankruptcyHandoffPlayer">
+          确认后将交接给 {{ bankruptcyHandoffPlayer.name }}。
+        </p>
+        <p v-else>正在确定后续流程。</p>
+        <button
+          class="primary-action full"
+          type="button"
+          :disabled="actionLocked || presentationReadyCueId === null"
+          @click="acknowledgePresentationResult"
+        >
+          {{ presentationReadyCueId === null ? '正在呈现…' : '继续交接' }}
+        </button>
+      </article>
+    </section>
+
+    <section
+      v-if="isFinishedFlow && winner && !resumePromptOpen"
+      class="presentation-backdrop"
+      aria-modal="true"
+      role="dialog"
+    >
+      <article class="presentation-card winner-card" :style="{ '--winner-color': winner.color }">
+        <span class="eyebrow">Game finished</span>
+        <div class="presentation-icon winner-icon">★</div>
+        <h2>游戏结束</h2>
+        <p><strong>{{ winner.name }}</strong> 获胜</p>
+        <dl class="winner-summary">
+          <div><dt>最终现金</dt><dd>{{ winner.cash * 10 }}万元</dd></div>
+          <div><dt>胜者标识</dt><dd>{{ winner.id }}</dd></div>
+        </dl>
+        <button
+          v-if="presentingFinished"
+          class="primary-action full"
+          type="button"
+          :disabled="actionLocked || presentationReadyCueId === null"
+          @click="acknowledgePresentationResult"
+        >
+          {{ presentationReadyCueId === null ? '正在呈现…' : '查看最终结果' }}
+        </button>
+      </article>
+    </section>
+
+    <section
+      v-if="handoffPending && !handoffActivationPending && !resumePromptOpen"
       class="handoff-backdrop"
       aria-modal="true"
       role="dialog"
@@ -701,7 +960,20 @@ function errorMessage(error: unknown): string {
           <div><span>当前大轮</span><strong>第 {{ game.round }} 大轮</strong></div>
           <div><span>当前玩家</span><strong>{{ activePlayer.name }}</strong></div>
           <div><span>保存时间</span><strong>{{ savedAtText }}</strong></div>
-          <div><span>恢复节点</span><strong>{{ snapshot.flow === 'awaitingHandoff' ? '玩家交接' : '回合开始' }}</strong></div>
+          <div>
+            <span>恢复节点</span>
+            <strong>
+              {{
+                snapshot.flow === 'awaitingHandoff'
+                  ? '玩家交接'
+                  : snapshot.flow === 'awaitingLiquidation'
+                    ? '等待清算'
+                    : snapshot.flow === 'finished'
+                      ? '最终结果'
+                      : '回合开始'
+              }}
+            </strong>
+          </div>
         </div>
         <p v-if="props.initialLoad.migrated" class="migration-note">旧版存档将在继续后升级到新的完整性校验格式。</p>
         <div class="session-entry-actions">
@@ -731,6 +1003,6 @@ function errorMessage(error: unknown): string {
       <button type="button" @click="recoveryNotice = null">知道了</button>
     </div>
 
-    <div class="build-badge">PHASE 1.4 · STABLE HANDOFF</div>
+    <div class="build-badge">PHASE 2.0A · PAYMENT & LIQUIDATION</div>
   </main>
 </template>

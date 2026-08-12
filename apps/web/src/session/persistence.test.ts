@@ -1,6 +1,11 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { createTechnicalSliceState } from '@bigmoney/game-core';
-import { SeededRandom } from '@bigmoney/game-random';
+import {
+  createTechnicalSliceState,
+  executeCommand,
+  type GameState,
+  type PendingInteraction
+} from '@bigmoney/game-core';
+import { SeededRandom, SequenceRandom, type RandomSnapshot } from '@bigmoney/game-random';
 import {
   deleteSnapshot,
   loadSnapshot,
@@ -12,7 +17,8 @@ import {
   TECHNICAL_SLICE_SAVE_SLOT,
   clearTechnicalSliceSave,
   loadTechnicalSliceSave,
-  saveTechnicalSliceSave
+  saveTechnicalSliceSave,
+  type TechnicalSliceSave
 } from './persistence';
 
 beforeEach(async () => {
@@ -20,7 +26,7 @@ beforeEach(async () => {
 });
 
 describe('technical slice persistence', () => {
-  it('writes and validates a stable schema v2 save', async () => {
+  it('writes and validates a stable schema v3 turn-ready save', async () => {
     const random = new SeededRandom(20260805);
     const state = createTechnicalSliceState();
 
@@ -44,7 +50,7 @@ describe('technical slice persistence', () => {
 
     await saveSnapshot(TECHNICAL_SLICE_SAVE_SLOT, {
       schemaVersion: 1,
-      game: state,
+      game: createLegacyGame(state),
       random: random.getSnapshot(),
       savedAt: '2026-08-06T00:00:00.000Z'
     });
@@ -53,8 +59,10 @@ describe('technical slice persistence', () => {
 
     expect(loaded.status).toBe('ready');
     expect(loaded.migrated).toBe(true);
-    expect(loaded.save?.schemaVersion).toBe(2);
+    expect(loaded.save?.schemaVersion).toBe(3);
     expect(loaded.save?.flow).toBe('turnReady');
+    expect(loaded.save?.game.status).toBe('IN_PROGRESS');
+    expect(loaded.save?.game.winnerId).toBeNull();
   });
 
   it('quarantines a corrupted save and clears the active slot', async () => {
@@ -103,4 +111,328 @@ describe('technical slice persistence', () => {
     expect(loaded.save?.flow).toBe('awaitingHandoff');
     expect(loaded.save?.handoffFromPlayerId).toBe('P1');
   });
+
+  it('round-trips awaiting liquidation with its canonical debt and completed liquidation mutations', async () => {
+    const random = new SeededRandom(17);
+    const state = createAwaitingLiquidationState();
+
+    const written = await saveTechnicalSliceSave(
+      state,
+      random.getSnapshot(),
+      'awaitingLiquidation'
+    );
+    const loaded = await loadTechnicalSliceSave();
+    const pending = loaded.save?.game.pendingInteraction;
+
+    expect(written.flow).toBe('awaitingLiquidation');
+    expect(written.handoffFromPlayerId).toBeNull();
+    expect(loaded.status).toBe('ready');
+    expect(loaded.save?.game).toEqual(state);
+    expect(loaded.save?.random).toEqual(random.getSnapshot());
+    expect(pending).toMatchObject({
+      type: 'LIQUIDATION',
+      payment: {
+        id: 'PAYMENT-0001',
+        amount: 75,
+        payerId: 'P2',
+        receiverId: 'P1',
+        reason: 'RENT'
+      }
+    });
+    expect(loaded.save?.game.properties.A2).toMatchObject({ ownerId: null, level: 0 });
+    expect('selectedPropertyIds' in written).toBe(false);
+    expect('selectedPropertyIds' in written.game).toBe(false);
+  });
+
+  it('round-trips finished with the winner and final GameState untouched', async () => {
+    const random = new SeededRandom(19);
+    const state = createFinishedState();
+    state.turn.rolledValue = 6;
+
+    await saveTechnicalSliceSave(state, random.getSnapshot(), 'finished');
+    const loaded = await loadTechnicalSliceSave();
+
+    expect(loaded.status).toBe('ready');
+    expect(loaded.save?.flow).toBe('finished');
+    expect(loaded.save?.handoffFromPlayerId).toBeNull();
+    expect(loaded.save?.game).toEqual(state);
+    expect(loaded.save?.game.winnerId).toBe('P1');
+  });
+
+  it.each([
+    ['missing liquidation interaction', (save: TechnicalSliceSave) => {
+      save.game.pendingInteraction = null;
+    }],
+    ['wrong pending interaction type', (save: TechnicalSliceSave) => {
+      save.game.pendingInteraction = {
+        type: 'EVENT_RESULT',
+        playerId: 'P2',
+        eventId: 'EVENT_REPAIR_FEE',
+        title: 'fee',
+        description: 'fee'
+      };
+    }],
+    ['missing payer', (save: TechnicalSliceSave) => {
+      const interaction = requireLiquidation(save.game);
+      interaction.playerId = 'P9';
+      (interaction.payment as { payerId: string }).payerId = 'P9';
+    }],
+    ['bankrupt payer', (save: TechnicalSliceSave) => {
+      save.game.players[1]!.bankrupt = true;
+    }],
+    ['payer that is not active', (save: TechnicalSliceSave) => {
+      save.game.activePlayerIndex = 0;
+    }],
+    ['missing receiver', (save: TechnicalSliceSave) => {
+      const interaction = requireLiquidation(save.game);
+      (interaction.payment as { receiverId: string | null }).receiverId = 'P9';
+    }],
+    ['payer as receiver', (save: TechnicalSliceSave) => {
+      const interaction = requireLiquidation(save.game);
+      (interaction.payment as { receiverId: string | null }).receiverId = 'P2';
+    }],
+    ['non-positive payment amount', (save: TechnicalSliceSave) => {
+      const interaction = requireLiquidation(save.game);
+      (interaction.payment as { amount: number }).amount = 0;
+    }]
+  ])('quarantines awaiting-liquidation saves with %s', async (_name, mutate) => {
+    const invalid = recomputeIntegrity(await createLiquidationSave());
+    mutate(invalid);
+    await saveSnapshot(TECHNICAL_SLICE_SAVE_SLOT, recomputeIntegrity(invalid));
+
+    await expectRecoveredAndQuarantined();
+  });
+
+  it.each(['turnReady', 'awaitingHandoff'] as const)(
+    'quarantines a liquidation interaction outside %s',
+    async (flow) => {
+      const invalid = recomputeIntegrity(await createLiquidationSave());
+      invalid.flow = flow;
+      invalid.handoffFromPlayerId = flow === 'awaitingHandoff' ? 'P1' : null;
+      await saveSnapshot(TECHNICAL_SLICE_SAVE_SLOT, recomputeIntegrity(invalid));
+
+      await expectRecoveredAndQuarantined();
+    }
+  );
+
+  it.each([
+    ['unfinished game status', (save: TechnicalSliceSave) => {
+      save.game.status = 'IN_PROGRESS';
+    }],
+    ['missing winner', (save: TechnicalSliceSave) => {
+      save.game.winnerId = null;
+    }],
+    ['unknown winner', (save: TechnicalSliceSave) => {
+      save.game.winnerId = 'P9';
+    }],
+    ['bankrupt winner', (save: TechnicalSliceSave) => {
+      save.game.players[0]!.bankrupt = true;
+    }],
+    ['multiple active players', (save: TechnicalSliceSave) => {
+      save.game.players[1]!.bankrupt = false;
+    }],
+    ['winner different from the only active player', (save: TechnicalSliceSave) => {
+      save.game.players[0]!.bankrupt = true;
+      save.game.players[1]!.bankrupt = false;
+    }],
+    ['pending interaction', (save: TechnicalSliceSave) => {
+      save.game.pendingInteraction = {
+        type: 'EVENT_RESULT',
+        playerId: 'P1',
+        eventId: 'EVENT_REPAIR_FEE',
+        title: 'fee',
+        description: 'fee'
+      };
+    }]
+  ])('quarantines finished saves with %s', async (_name, mutate) => {
+    const random = new SeededRandom(23);
+    const valid = await saveTechnicalSliceSave(
+      createFinishedState(),
+      random.getSnapshot(),
+      'finished'
+    );
+    mutate(valid);
+    await saveSnapshot(TECHNICAL_SLICE_SAVE_SLOT, recomputeIntegrity(valid));
+
+    await expectRecoveredAndQuarantined();
+  });
+
+  it('migrates valid schema v2 turn-ready and awaiting-handoff saves directly to v3', async () => {
+    const random = new SeededRandom(29);
+    const state = createTechnicalSliceState();
+    const turnReady = createV2Save(state, random.getSnapshot(), 'turnReady', null);
+
+    await saveSnapshot(TECHNICAL_SLICE_SAVE_SLOT, turnReady);
+    const migratedTurnReady = await loadTechnicalSliceSave();
+
+    expect(migratedTurnReady.status).toBe('ready');
+    expect(migratedTurnReady.migrated).toBe(true);
+    expect(migratedTurnReady.save).toMatchObject({
+      schemaVersion: 3,
+      flow: 'turnReady',
+      handoffFromPlayerId: null,
+      game: { status: 'IN_PROGRESS', winnerId: null }
+    });
+
+    const handoffState = createTechnicalSliceState();
+    handoffState.activePlayerIndex = 1;
+    await saveSnapshot(
+      TECHNICAL_SLICE_SAVE_SLOT,
+      createV2Save(handoffState, random.getSnapshot(), 'awaitingHandoff', 'P1')
+    );
+    const migratedHandoff = await loadTechnicalSliceSave();
+
+    expect(migratedHandoff.status).toBe('ready');
+    expect(migratedHandoff.save).toMatchObject({
+      schemaVersion: 3,
+      flow: 'awaitingHandoff',
+      handoffFromPlayerId: 'P1',
+      game: { status: 'IN_PROGRESS', winnerId: null }
+    });
+  });
+
+  it('quarantines invalid v2 before migration and unknown schemas', async () => {
+    const random = new SeededRandom(31);
+    const corrupt = createV2Save(
+      createTechnicalSliceState(),
+      random.getSnapshot(),
+      'turnReady',
+      null
+    );
+    corrupt.game.round = 0;
+    await saveSnapshot(TECHNICAL_SLICE_SAVE_SLOT, corrupt);
+    await expectRecoveredAndQuarantined();
+
+    await saveSnapshot(TECHNICAL_SLICE_SAVE_SLOT, { schemaVersion: 99 });
+    await expectRecoveredAndQuarantined();
+  });
+
+  it.each([
+    ['status', (save: TechnicalSliceSave) => { save.game.status = 'FINISHED'; }],
+    ['winnerId', (save: TechnicalSliceSave) => { save.game.winnerId = 'P1'; }],
+    ['pending liquidation', (save: TechnicalSliceSave) => {
+      const interaction = requireLiquidation(save.game);
+      interaction.payment = { ...interaction.payment, amount: interaction.payment.amount + 1 };
+    }]
+  ])('rejects v3 integrity after changing %s', async (_name, mutate) => {
+    const valid = await createLiquidationSave();
+    mutate(valid);
+    await saveSnapshot(TECHNICAL_SLICE_SAVE_SLOT, valid);
+
+    await expectRecoveredAndQuarantined();
+  });
+
+  it.each(['presentingLiquidation', 'presentingBankruptcy', 'presentingFinished'])(
+    'quarantines transient flow %s',
+    async (flow) => {
+      const valid = await createLiquidationSave();
+      const raw = structuredClone(valid) as Omit<TechnicalSliceSave, 'flow'> & {
+        flow: string;
+      };
+      raw.flow = flow;
+      await saveSnapshot(TECHNICAL_SLICE_SAVE_SLOT, recomputeIntegrity(raw));
+
+      await expectRecoveredAndQuarantined();
+    }
+  );
 });
+
+function createAwaitingLiquidationState(): GameState {
+  const state = createTechnicalSliceState();
+  state.activePlayerIndex = 1;
+  state.players[1]!.position = 0;
+  state.players[1]!.cash = 10;
+  state.properties.A1!.ownerId = 'P1';
+  state.properties.A1!.level = 3;
+  state.properties.A2!.ownerId = 'P2';
+  state.properties.A3!.ownerId = 'P2';
+  const random = new SequenceRandom([1]);
+  const rolled = executeCommand(state, { type: 'ROLL_DICE', playerId: 'P2' }, random).nextState;
+  const moved = executeCommand(rolled, { type: 'MOVE_ONE_STEP', playerId: 'P2' }, random).nextState;
+  const pending = executeCommand(
+    moved,
+    { type: 'RESOLVE_DESTINATION', playerId: 'P2' },
+    random
+  ).nextState;
+  const payment = requireLiquidation(pending).payment;
+
+  return executeCommand(
+    pending,
+    { type: 'CONFIRM_LIQUIDATION', playerId: 'P2', paymentId: payment.id, propertyIds: ['A2'] },
+    random
+  ).nextState;
+}
+
+function createFinishedState(): GameState {
+  const state = createTechnicalSliceState();
+  state.players[1]!.bankrupt = true;
+  state.status = 'FINISHED';
+  state.winnerId = 'P1';
+  return state;
+}
+
+function createLegacyGame(state: GameState): Record<string, unknown> {
+  const { status: _status, winnerId: _winnerId, ...legacy } = state;
+  return structuredClone(legacy) as Record<string, unknown>;
+}
+
+function createV2Save(
+  game: GameState,
+  random: RandomSnapshot,
+  flow: 'turnReady' | 'awaitingHandoff',
+  handoffFromPlayerId: string | null
+): Record<string, unknown> & { game: GameState } {
+  const payload = {
+    schemaVersion: 2,
+    game: createLegacyGame(game),
+    random: structuredClone(random),
+    flow,
+    handoffFromPlayerId,
+    savedAt: '2026-08-12T00:00:00.000Z'
+  };
+  return {
+    ...payload,
+    game: payload.game as unknown as GameState,
+    integrity: createIntegrity(payload)
+  };
+}
+
+async function createLiquidationSave(): Promise<TechnicalSliceSave> {
+  return saveTechnicalSliceSave(
+    createAwaitingLiquidationState(),
+    new SeededRandom(37).getSnapshot(),
+    'awaitingLiquidation'
+  );
+}
+
+function requireLiquidation(game: GameState): Extract<PendingInteraction, { type: 'LIQUIDATION' }> {
+  const interaction = game.pendingInteraction;
+  if (!interaction || interaction.type !== 'LIQUIDATION') {
+    throw new Error('Expected a liquidation interaction.');
+  }
+  return interaction;
+}
+
+function recomputeIntegrity<T extends { integrity: string }>(save: T): T {
+  const { integrity: _integrity, ...payload } = save;
+  return { ...payload, integrity: createIntegrity(payload) } as T;
+}
+
+async function expectRecoveredAndQuarantined(): Promise<void> {
+  const loaded = await loadTechnicalSliceSave();
+  expect(loaded.status).toBe('recovered');
+  expect(await loadSnapshot(TECHNICAL_SLICE_SAVE_SLOT)).toBeNull();
+  expect(await loadSnapshot(TECHNICAL_SLICE_QUARANTINE_SLOT)).not.toBeNull();
+}
+
+function createIntegrity(payload: unknown): string {
+  const text = JSON.stringify(payload);
+  let hash = 0x811c9dc5;
+
+  for (let index = 0; index < text.length; index += 1) {
+    hash ^= text.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193);
+  }
+
+  return `fnv1a32:${(hash >>> 0).toString(16).padStart(8, '0')}`;
+}
