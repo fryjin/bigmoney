@@ -7,13 +7,21 @@ import {
   pickUnique,
   type RandomProvider
 } from '@bigmoney/game-random';
-import { getRent, getUpgradeCost, roundMoney } from './money';
+import {
+  getLiquidationValue,
+  getRent,
+  getUpgradeCost,
+  roundMoney
+} from './money';
 import type {
   CardInstance,
   CommandResult,
   DomainEvent,
+  ForcedPayment,
   GameCommand,
   GameState,
+  LiquidationCandidate,
+  LiquidationQuote,
   PlayerId,
   PlayerState,
   PropertyState,
@@ -37,6 +45,8 @@ export function createTechnicalSliceState(
   return {
     ruleVersion: content.ruleVersion,
     technicalSliceVersion: content.technicalSliceVersion,
+    status: 'IN_PROGRESS',
+    winnerId: null,
     round: 1,
     activePlayerIndex: 0,
     players: [
@@ -56,7 +66,13 @@ export function executeCommand(
   random: RandomProvider,
   content: TechnicalSliceContent = technicalSliceContent
 ): CommandResult {
+  if (state.status === 'FINISHED') {
+    throw new Error('游戏已经结束。');
+  }
   const activePlayer = getActivePlayer(state);
+  if (activePlayer.bankrupt) {
+    throw new Error('破产玩家不能继续执行回合操作。');
+  }
   if (activePlayer.id !== command.playerId) {
     throw new Error('当前操作玩家不是本回合玩家。');
   }
@@ -82,6 +98,8 @@ export function executeCommand(
       return acknowledgeResult(state, activePlayer.id);
     case 'CHOOSE_CARD_TO_DISCARD':
       return chooseCardToDiscard(state, activePlayer.id, command.cardInstanceId);
+    case 'CONFIRM_LIQUIDATION':
+      return confirmLiquidation(state, activePlayer.id, command.paymentId, command.propertyIds, content);
     case 'END_TURN':
       return endTurn(state, activePlayer.id, random, content);
   }
@@ -118,6 +136,75 @@ function getActivePlayer(state: GameState): PlayerState {
   const player = state.players[state.activePlayerIndex];
   if (!player) throw new Error('找不到当前玩家。');
   return player;
+}
+
+export function getActivePlayers(state: GameState): PlayerState[] {
+  return state.players.filter((player) => !player.bankrupt);
+}
+
+export function getNextActivePlayerIndex(state: GameState, fromIndex: number): number | null {
+  for (let offset = 1; offset <= state.players.length; offset += 1) {
+    const candidateIndex = (fromIndex + offset) % state.players.length;
+    const candidate = state.players[candidateIndex];
+    if (candidate && !candidate.bankrupt) return candidateIndex;
+  }
+  return null;
+}
+
+export function getWinnerId(state: GameState): PlayerId | null {
+  const activePlayers = getActivePlayers(state);
+  return activePlayers.length === 1 ? activePlayers[0]!.id : null;
+}
+
+export function getLiquidationCandidates(
+  state: GameState,
+  playerId: PlayerId,
+  content: TechnicalSliceContent = technicalSliceContent
+): LiquidationCandidate[] {
+  return content.properties.flatMap((definition) => {
+    const property = state.properties[definition.id];
+    if (!property || property.ownerId !== playerId) return [];
+    return [{
+      propertyId: property.id,
+      purchasePrice: definition.purchasePrice,
+      liquidationValue: getLiquidationValue(definition.purchasePrice)
+    }];
+  });
+}
+
+export function quoteLiquidation(
+  state: GameState,
+  paymentId: string,
+  propertyIds: PropertyState['id'][],
+  content: TechnicalSliceContent = technicalSliceContent
+): LiquidationQuote {
+  const pending = getLiquidationInteraction(state, paymentId);
+  const candidates = getSelectedLiquidationCandidates(
+    state,
+    pending.playerId,
+    propertyIds,
+    content
+  );
+  const liquidationValue = candidates.reduce(
+    (total, candidate) => total + candidate.liquidationValue,
+    0
+  );
+  const payer = state.players.find((player) => player.id === pending.playerId);
+  if (!payer) throw new Error('付款玩家不存在。');
+  const cashAfterLiquidation = payer.cash + liquidationValue;
+  const remainingAmount = Math.max(pending.payment.amount - cashAfterLiquidation, 0);
+
+  return {
+    paymentId,
+    payerId: pending.playerId,
+    amountDue: pending.payment.amount,
+    availableCash: payer.cash,
+    propertyIds: candidates.map((candidate) => candidate.propertyId),
+    liquidationValue,
+    cashAfterLiquidation,
+    remainingAmount,
+    canCompletePayment: remainingAmount === 0
+  };
 }
 
 function rollDice(
@@ -336,23 +423,43 @@ function resolveDestination(
       const owner = nextState.players.find((candidate) => candidate.id === property.ownerId);
       if (!owner) throw new Error('地产所有者不存在。');
       const rent = getRent(definition.purchasePrice, property.level);
-      if (player.cash < rent) {
-        throw new Error('技术切片暂未进入资产清算模块；本次租金超出玩家现金。');
-      }
-      player.cash -= rent;
-      owner.cash += rent;
-      events.push({
-        type: 'RENT_PAID',
-        payerId: playerId,
-        ownerId: owner.id,
-        propertyId: property.id,
-        amount: rent
-      });
+      requestForcedPayment(
+        nextState,
+        {
+          id: createInstanceId(nextState, 'PAYMENT'),
+          payerId: playerId,
+          receiverId: owner.id,
+          amount: rent,
+          reason: 'RENT',
+          propertyId: property.id
+        },
+        content,
+        events
+      );
+      return { nextState, events };
     }
   }
 
   if (tile.type === 'EVENT') {
     const eventDefinition = pickOne(content.events, random);
+    if (eventDefinition.kind === 'PERSONAL_EXPENSE') {
+      requestForcedPayment(
+        nextState,
+        {
+          id: createInstanceId(nextState, 'PAYMENT'),
+          payerId: playerId,
+          receiverId: null,
+          amount: eventDefinition.amount,
+          reason: 'EVENT_EXPENSE',
+          eventId: eventDefinition.id,
+          title: eventDefinition.name,
+          description: eventDefinition.description
+        },
+        content,
+        events
+      );
+      return { nextState, events };
+    }
     const changes = applyEvent(nextState, playerId, eventDefinition.kind, eventDefinition.amount);
     nextState.pendingInteraction = {
       type: 'EVENT_RESULT',
@@ -551,6 +658,191 @@ function chooseCardToDiscard(
   return { nextState, events };
 }
 
+function confirmLiquidation(
+  state: GameState,
+  playerId: PlayerId,
+  paymentId: string,
+  propertyIds: PropertyState['id'][],
+  content: TechnicalSliceContent
+): CommandResult {
+  const pending = getLiquidationInteraction(state, paymentId);
+  if (pending.playerId !== playerId) {
+    throw new Error('只能确认当前付款玩家的清算。');
+  }
+  const quote = quoteLiquidation(state, paymentId, propertyIds, content);
+  const nextState = structuredClone(state);
+  const nextPending = getLiquidationInteraction(nextState, paymentId);
+  const payer = nextState.players.find((player) => player.id === playerId);
+  if (!payer) throw new Error('付款玩家不存在。');
+
+  const events: DomainEvent[] = [];
+  for (const propertyId of quote.propertyIds) {
+    const property = nextState.properties[propertyId];
+    const candidate = getLiquidationCandidates(nextState, playerId, content).find(
+      (item) => item.propertyId === propertyId
+    );
+    if (!property || !candidate) throw new Error('待清算地产状态已失效。');
+
+    property.ownerId = null;
+    property.level = 0;
+    payer.cash += candidate.liquidationValue;
+    events.push({
+      type: 'PROPERTY_LIQUIDATED',
+      playerId,
+      propertyId,
+      value: candidate.liquidationValue
+    });
+  }
+
+  resolveForcedPayment(nextState, nextPending.payment, content, events);
+  return { nextState, events };
+}
+
+function getLiquidationInteraction(state: GameState, paymentId: string) {
+  const pending = state.pendingInteraction;
+  if (!pending || pending.type !== 'LIQUIDATION' || pending.payment.id !== paymentId) {
+    throw new Error('当前没有匹配的待清算付款。');
+  }
+  return pending;
+}
+
+function getSelectedLiquidationCandidates(
+  state: GameState,
+  playerId: PlayerId,
+  propertyIds: PropertyState['id'][],
+  content: TechnicalSliceContent
+): LiquidationCandidate[] {
+  if (propertyIds.length === 0) {
+    throw new Error('清算地产不能为空。');
+  }
+  if (new Set(propertyIds).size !== propertyIds.length) {
+    throw new Error('清算地产不能重复。');
+  }
+
+  const candidatesById = new Map(
+    getLiquidationCandidates(state, playerId, content).map((candidate) => [
+      candidate.propertyId,
+      candidate
+    ])
+  );
+  return propertyIds.map((propertyId) => {
+    const candidate = candidatesById.get(propertyId);
+    if (!candidate) throw new Error('只能清算付款玩家持有的地产。');
+    return candidate;
+  });
+}
+
+function requestForcedPayment(
+  state: GameState,
+  payment: ForcedPayment,
+  content: TechnicalSliceContent,
+  events: DomainEvent[]
+): void {
+  events.push({ type: 'PAYMENT_REQUESTED', payment });
+  resolveForcedPayment(state, payment, content, events);
+}
+
+function resolveForcedPayment(
+  state: GameState,
+  payment: ForcedPayment,
+  content: TechnicalSliceContent,
+  events: DomainEvent[]
+): void {
+  const payer = state.players.find((player) => player.id === payment.payerId);
+  if (!payer) throw new Error('付款玩家不存在。');
+
+  if (payer.cash >= payment.amount) {
+    payer.cash -= payment.amount;
+    if (payment.receiverId !== null) {
+      const receiver = state.players.find((player) => player.id === payment.receiverId);
+      if (!receiver) throw new Error('收款玩家不存在。');
+      receiver.cash += payment.amount;
+    }
+    state.pendingInteraction = null;
+    events.push({ type: 'PAYMENT_COMPLETED', payment });
+    continueAfterPayment(state, payment, events);
+    return;
+  }
+
+  if (getLiquidationCandidates(state, payment.payerId, content).length > 0) {
+    state.pendingInteraction = {
+      type: 'LIQUIDATION',
+      playerId: payment.payerId,
+      payment
+    };
+    events.push({
+      type: 'LIQUIDATION_REQUIRED',
+      payment,
+      remainingAmount: payment.amount - payer.cash
+    });
+    return;
+  }
+
+  const paidAmount = payer.cash;
+  payer.cash = 0;
+  if (payment.receiverId !== null) {
+    const receiver = state.players.find((player) => player.id === payment.receiverId);
+    if (!receiver) throw new Error('收款玩家不存在。');
+    receiver.cash += paidAmount;
+  }
+  payer.bankrupt = true;
+  state.pendingInteraction = null;
+  events.push({
+    type: 'PLAYER_BANKRUPT',
+    playerId: payer.id,
+    paymentId: payment.id,
+    receiverId: payment.receiverId,
+    paidAmount,
+    writtenOffAmount: payment.amount - paidAmount
+  });
+
+  const winnerId = getWinnerId(state);
+  if (winnerId !== null) {
+    state.status = 'FINISHED';
+    state.winnerId = winnerId;
+    events.push({ type: 'GAME_FINISHED', winnerId });
+  }
+}
+
+function continueAfterPayment(
+  state: GameState,
+  payment: ForcedPayment,
+  events: DomainEvent[]
+): void {
+  if (payment.reason === 'RENT') {
+    events.push({
+      type: 'RENT_PAID',
+      payerId: payment.payerId,
+      ownerId: payment.receiverId,
+      propertyId: payment.propertyId,
+      amount: payment.amount
+    });
+    markTurnReady(state, payment.payerId, events);
+    return;
+  }
+
+  if (payment.reason === 'EVENT_EXPENSE') {
+    state.pendingInteraction = {
+      type: 'EVENT_RESULT',
+      playerId: payment.payerId,
+      eventId: payment.eventId,
+      title: payment.title,
+      description: payment.description
+    };
+    events.push({
+      type: 'EVENT_RESOLVED',
+      eventId: payment.eventId,
+      playerId: payment.payerId,
+      title: payment.title,
+      description: payment.description,
+      changes: [{ playerId: payment.payerId, amount: -payment.amount }]
+    });
+    return;
+  }
+
+  markTurnReady(state, payment.payerId, events);
+}
+
 function endTurn(
   state: GameState,
   playerId: PlayerId,
@@ -563,7 +855,9 @@ function endTurn(
   const nextState = structuredClone(state);
   const events: DomainEvent[] = [];
   const previousPlayerIndex = nextState.activePlayerIndex;
-  nextState.activePlayerIndex = (nextState.activePlayerIndex + 1) % nextState.players.length;
+  const nextPlayerIndex = getNextActivePlayerIndex(nextState, previousPlayerIndex);
+  if (nextPlayerIndex === null) throw new Error('没有可继续游戏的玩家。');
+  nextState.activePlayerIndex = nextPlayerIndex;
 
   let completedRound: number | null = null;
   if (nextState.activePlayerIndex <= previousPlayerIndex) {
@@ -589,7 +883,7 @@ function endTurn(
 function applyEvent(
   state: GameState,
   activePlayerId: PlayerId,
-  kind: 'PERSONAL_INCOME' | 'PERSONAL_EXPENSE' | 'PLAYER_TRANSFER',
+  kind: 'PERSONAL_INCOME' | 'PLAYER_TRANSFER',
   amount: number
 ): Array<{ playerId: PlayerId; amount: number }> {
   const activePlayer = state.players.find((player) => player.id === activePlayerId);
@@ -598,14 +892,6 @@ function applyEvent(
   if (kind === 'PERSONAL_INCOME') {
     activePlayer.cash += amount;
     return [{ playerId: activePlayerId, amount }];
-  }
-
-  if (kind === 'PERSONAL_EXPENSE') {
-    if (activePlayer.cash < amount) {
-      throw new Error('技术切片暂未进入资产清算模块；本次事件费用超出玩家现金。');
-    }
-    activePlayer.cash -= amount;
-    return [{ playerId: activePlayerId, amount: -amount }];
   }
 
   const otherPlayer = state.players.find(
@@ -629,6 +915,7 @@ function settleStocksForCompletedRound(
   events: DomainEvent[]
 ): void {
   for (const player of state.players) {
+    if (player.bankrupt) continue;
     const remainingHoldings: StockHolding[] = [];
 
     for (const holding of player.stocks) {

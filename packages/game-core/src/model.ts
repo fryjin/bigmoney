@@ -6,6 +6,50 @@ export type StockId = string;
 export type CardId = string;
 export type TileId = string;
 export type Money = number;
+export type GameStatus = 'IN_PROGRESS' | 'FINISHED';
+
+interface ForcedPaymentBase {
+  id: string;
+  payerId: PlayerId;
+  receiverId: PlayerId | null;
+  amount: Money;
+}
+
+export type ForcedPayment =
+  | (ForcedPaymentBase & {
+      receiverId: PlayerId;
+      reason: 'RENT';
+      propertyId: PropertyId;
+    })
+  | (ForcedPaymentBase & {
+      receiverId: null;
+      reason: 'EVENT_EXPENSE';
+      eventId: string;
+      title: string;
+      description: string;
+    })
+  | (ForcedPaymentBase & {
+      receiverId: null;
+      reason: 'PUBLIC_FEE';
+    });
+
+export interface LiquidationCandidate {
+  propertyId: PropertyId;
+  purchasePrice: Money;
+  liquidationValue: Money;
+}
+
+export interface LiquidationQuote {
+  paymentId: string;
+  payerId: PlayerId;
+  amountDue: Money;
+  availableCash: Money;
+  propertyIds: PropertyId[];
+  liquidationValue: Money;
+  cashAfterLiquidation: Money;
+  remainingAmount: Money;
+  canCompletePayment: boolean;
+}
 
 export interface CardInstance {
   instanceId: string;
@@ -94,17 +138,26 @@ export interface CardReplacementInteraction {
   drawnCardInstanceId: string;
 }
 
+export interface LiquidationInteraction {
+  type: 'LIQUIDATION';
+  playerId: PlayerId;
+  payment: ForcedPayment;
+}
+
 export type PendingInteraction =
   | StockMarketInteraction
   | PropertyPurchaseInteraction
   | PropertyUpgradeInteraction
   | EventResultInteraction
   | CardDrawInteraction
-  | CardReplacementInteraction;
+  | CardReplacementInteraction
+  | LiquidationInteraction;
 
 export interface GameState {
   ruleVersion: string;
   technicalSliceVersion: string;
+  status: GameStatus;
+  winnerId: PlayerId | null;
   round: number;
   activePlayerIndex: number;
   players: PlayerState[];
@@ -135,6 +188,12 @@ export type GameCommand =
   | { type: 'SKIP_UPGRADE'; playerId: PlayerId }
   | { type: 'ACKNOWLEDGE_RESULT'; playerId: PlayerId }
   | { type: 'CHOOSE_CARD_TO_DISCARD'; playerId: PlayerId; cardInstanceId: string }
+  | {
+      type: 'CONFIRM_LIQUIDATION';
+      playerId: PlayerId;
+      paymentId: string;
+      propertyIds: PropertyId[];
+    }
   | { type: 'END_TURN'; playerId: PlayerId };
 
 export type DomainEvent =
@@ -201,6 +260,28 @@ export type DomainEvent =
       propertyId: PropertyId;
       amount: Money;
     }
+  | { type: 'PAYMENT_REQUESTED'; payment: ForcedPayment }
+  | { type: 'PAYMENT_COMPLETED'; payment: ForcedPayment }
+  | {
+      type: 'LIQUIDATION_REQUIRED';
+      payment: ForcedPayment;
+      remainingAmount: Money;
+    }
+  | {
+      type: 'PROPERTY_LIQUIDATED';
+      playerId: PlayerId;
+      propertyId: PropertyId;
+      value: Money;
+    }
+  | {
+      type: 'PLAYER_BANKRUPT';
+      playerId: PlayerId;
+      paymentId: string;
+      receiverId: PlayerId | null;
+      paidAmount: Money;
+      writtenOffAmount: Money;
+    }
+  | { type: 'GAME_FINISHED'; winnerId: PlayerId }
   | {
       type: 'EVENT_RESOLVED';
       eventId: string;

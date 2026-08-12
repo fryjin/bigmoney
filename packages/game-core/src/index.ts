@@ -1,10 +1,16 @@
 export {
   createTechnicalSliceState,
-  executeCommand
+  executeCommand,
+  getActivePlayers,
+  getLiquidationCandidates,
+  getNextActivePlayerIndex,
+  getWinnerId,
+  quoteLiquidation
 } from './engine';
 
 export {
   formatInternalMoney,
+  getLiquidationValue,
   getRent,
   getUpgradeCost,
   roundMoney,
@@ -18,6 +24,10 @@ export type {
   CardId,
   TileId,
   Money,
+  GameStatus,
+  ForcedPayment,
+  LiquidationCandidate,
+  LiquidationQuote,
   CardInstance,
   StockHolding,
   PlayerState,
@@ -30,6 +40,7 @@ export type {
   EventResultInteraction,
   CardDrawInteraction,
   CardReplacementInteraction,
+  LiquidationInteraction,
   GameState,
   GameCommand,
   DomainEvent,

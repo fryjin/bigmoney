@@ -22,6 +22,10 @@ export function getUpgradeCost(
   return roundMoney(purchasePrice * ratios[nextLevel]);
 }
 
+export function getLiquidationValue(purchasePrice: Money): Money {
+  return roundMoney(purchasePrice * 0.5);
+}
+
 export function getRent(
   purchasePrice: Money,
   level: 0 | 1 | 2 | 3
