@@ -181,12 +181,14 @@ export function quoteLiquidation(
   content: TechnicalSliceContent = technicalSliceContent
 ): LiquidationQuote {
   const pending = getLiquidationInteraction(state, paymentId);
-  const candidates = getSelectedLiquidationCandidates(
-    state,
-    pending.playerId,
-    propertyIds,
-    content
-  );
+  const candidates = propertyIds.length === 0
+    ? []
+    : getSelectedLiquidationCandidates(
+      state,
+      pending.playerId,
+      propertyIds,
+      content
+    );
   const liquidationValue = candidates.reduce(
     (total, candidate) => total + candidate.liquidationValue,
     0
@@ -670,6 +672,9 @@ function confirmLiquidation(
   const pending = getLiquidationInteraction(state, paymentId);
   if (pending.playerId !== playerId) {
     throw new Error('只能确认当前付款玩家的清算。');
+  }
+  if (propertyIds.length === 0) {
+    throw new Error('Liquidation requires at least one property.');
   }
   const quote = quoteLiquidation(state, paymentId, propertyIds, content);
   const nextState = structuredClone(state);

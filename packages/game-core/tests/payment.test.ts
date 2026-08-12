@@ -120,6 +120,28 @@ describe('forced payment, liquidation, and bankruptcy', () => {
     });
   });
 
+  it('returns a validated zero-selection quote without changing the pending liquidation', () => {
+    const { state, paymentId } = startRentPayment((nextState) => {
+      nextState.players[1]!.cash = 10;
+      nextState.properties.A2!.ownerId = 'P2';
+    });
+    const beforeQuote = structuredClone(state);
+
+    expect(quoteLiquidation(state, paymentId, [])).toEqual({
+      paymentId,
+      payerId: 'P2',
+      amountDue: 75,
+      availableCash: 10,
+      propertyIds: [],
+      liquidationValue: 0,
+      cashAfterLiquidation: 10,
+      remainingAmount: 65,
+      canCompletePayment: false
+    });
+    expect(state).toEqual(beforeQuote);
+    expect(() => quoteLiquidation(state, 'PAYMENT-9999', [])).toThrow();
+  });
+
   it('liquidates the selected property, resets its level, and retains excess cash after paying', () => {
     const { state, paymentId } = startRentPayment((nextState) => {
       nextState.players[1]!.cash = 50;
