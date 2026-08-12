@@ -1,6 +1,10 @@
 import { setup } from 'xstate';
 
-export type StableFlowPhase = 'turnReady' | 'awaitingHandoff';
+export type StableFlowPhase =
+  | 'turnReady'
+  | 'awaitingHandoff'
+  | 'awaitingLiquidation'
+  | 'finished';
 
 export type FlowPhase =
   | StableFlowPhase
@@ -15,6 +19,9 @@ export type FlowPhase =
   | 'awaitingResult'
   | 'presentingDecision'
   | 'presentingDestination'
+  | 'presentingLiquidation'
+  | 'presentingBankruptcy'
+  | 'presentingFinished'
   | 'turnEnd'
   | 'presentingTurnEnd';
 
@@ -33,6 +40,14 @@ export type FlowMachineEvent =
   | { type: 'RESULT_REQUIRED' }
   | { type: 'DESTINATION_PRESENTATION_REQUIRED' }
   | { type: 'DESTINATION_COMPLETE' }
+  | { type: 'LIQUIDATION_REQUIRED' }
+  | { type: 'LIQUIDATION_COMPLETED' }
+  | { type: 'LIQUIDATION_RESULT_REQUIRED' }
+  | { type: 'LIQUIDATION_PRESENTED' }
+  | { type: 'BANKRUPTCY_PRESENTATION_REQUIRED' }
+  | { type: 'BANKRUPTCY_PRESENTED' }
+  | { type: 'FINISHED_PRESENTATION_REQUIRED' }
+  | { type: 'FINISHED_PRESENTED' }
   | { type: 'PROPERTY_RESOLVED' }
   | { type: 'UPGRADE_RESOLVED' }
   | { type: 'RESULT_ACKNOWLEDGED' }
@@ -93,6 +108,9 @@ export const technicalSliceFlowMachine = setup({
         PROPERTY_REQUIRED: 'awaitingProperty',
         UPGRADE_REQUIRED: 'awaitingUpgrade',
         RESULT_REQUIRED: 'awaitingResult',
+        LIQUIDATION_REQUIRED: 'awaitingLiquidation',
+        BANKRUPTCY_PRESENTATION_REQUIRED: 'presentingBankruptcy',
+        FINISHED_PRESENTATION_REQUIRED: 'presentingFinished',
         DESTINATION_PRESENTATION_REQUIRED: 'presentingDestination',
         DESTINATION_COMPLETE: 'turnEnd'
       }
@@ -122,6 +140,29 @@ export const technicalSliceFlowMachine = setup({
         DESTINATION_PRESENTED: 'turnEnd'
       }
     },
+    awaitingLiquidation: {
+      on: {
+        LIQUIDATION_COMPLETED: 'presentingLiquidation',
+        BANKRUPTCY_PRESENTATION_REQUIRED: 'presentingBankruptcy',
+        FINISHED_PRESENTATION_REQUIRED: 'presentingFinished'
+      }
+    },
+    presentingLiquidation: {
+      on: {
+        LIQUIDATION_PRESENTED: 'turnEnd',
+        LIQUIDATION_RESULT_REQUIRED: 'awaitingResult'
+      }
+    },
+    presentingBankruptcy: {
+      on: {
+        BANKRUPTCY_PRESENTED: 'awaitingHandoff'
+      }
+    },
+    presentingFinished: {
+      on: {
+        FINISHED_PRESENTED: 'finished'
+      }
+    },
     turnEnd: {
       on: {
         TURN_ENDED: 'presentingTurnEnd'
@@ -131,6 +172,9 @@ export const technicalSliceFlowMachine = setup({
       on: {
         TURN_PRESENTED: 'awaitingHandoff'
       }
+    },
+    finished: {
+      on: {}
     }
   }
 });
