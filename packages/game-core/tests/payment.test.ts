@@ -334,4 +334,41 @@ describe('forced payment, liquidation, and bankruptcy', () => {
       )
     ).toThrow();
   });
+
+  it('advances a bankrupt player to the next active player with a fresh turn', () => {
+    const state = createTechnicalSliceState();
+    state.players.push(
+      { ...structuredClone(state.players[0]!), id: 'P3', name: 'Player 3' },
+      { ...structuredClone(state.players[0]!), id: 'P4', name: 'Player 4' }
+    );
+    state.activePlayerIndex = 1;
+    state.players[1]!.bankrupt = true;
+    state.turn = {
+      rolledValue: 6,
+      remainingSteps: 0,
+      triggeredStockMarkets: [],
+      readyToEnd: false
+    };
+
+    const result = executeCommand(
+      state,
+      { type: 'ADVANCE_AFTER_BANKRUPTCY', playerId: 'P2' },
+      new SequenceRandom([20])
+    );
+
+    expect(result.nextState.activePlayerIndex).toBe(2);
+    expect(result.nextState.turn).toEqual({
+      rolledValue: null,
+      remainingSteps: 0,
+      triggeredStockMarkets: [],
+      readyToEnd: false
+    });
+    expect(result.events).toContainEqual({
+      type: 'TURN_ENDED',
+      playerId: 'P2',
+      nextPlayerId: 'P3',
+      completedRound: null,
+      nextRound: 1
+    });
+  });
 });

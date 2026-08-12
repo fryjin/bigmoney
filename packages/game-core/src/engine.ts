@@ -70,7 +70,7 @@ export function executeCommand(
     throw new Error('游戏已经结束。');
   }
   const activePlayer = getActivePlayer(state);
-  if (activePlayer.bankrupt) {
+  if (activePlayer.bankrupt && command.type !== 'ADVANCE_AFTER_BANKRUPTCY') {
     throw new Error('破产玩家不能继续执行回合操作。');
   }
   if (activePlayer.id !== command.playerId) {
@@ -100,6 +100,8 @@ export function executeCommand(
       return chooseCardToDiscard(state, activePlayer.id, command.cardInstanceId);
     case 'CONFIRM_LIQUIDATION':
       return confirmLiquidation(state, activePlayer.id, command.paymentId, command.propertyIds, content);
+    case 'ADVANCE_AFTER_BANKRUPTCY':
+      return advanceAfterBankruptcy(state, activePlayer.id, random, content);
     case 'END_TURN':
       return endTurn(state, activePlayer.id, random, content);
   }
@@ -851,6 +853,29 @@ function endTurn(
 ): CommandResult {
   if (state.pendingInteraction) throw new Error('仍有未处理的交互。');
   if (!state.turn.readyToEnd) throw new Error('当前回合尚未完成结算。');
+
+  return advanceTurn(state, playerId, random, content);
+}
+
+function advanceAfterBankruptcy(
+  state: GameState,
+  playerId: PlayerId,
+  random: RandomProvider,
+  content: TechnicalSliceContent
+): CommandResult {
+  const player = getActivePlayer(state);
+  if (!player.bankrupt) throw new Error('只有当前破产玩家可以完成破产后转交。');
+  if (state.pendingInteraction) throw new Error('破产后转交前不能保留待处理交互。');
+
+  return advanceTurn(state, playerId, random, content);
+}
+
+function advanceTurn(
+  state: GameState,
+  playerId: PlayerId,
+  random: RandomProvider,
+  content: TechnicalSliceContent
+): CommandResult {
 
   const nextState = structuredClone(state);
   const events: DomainEvent[] = [];

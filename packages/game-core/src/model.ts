@@ -194,6 +194,7 @@ export type GameCommand =
       paymentId: string;
       propertyIds: PropertyId[];
     }
+  | { type: 'ADVANCE_AFTER_BANKRUPTCY'; playerId: PlayerId }
   | { type: 'END_TURN'; playerId: PlayerId };
 
 export type DomainEvent =
