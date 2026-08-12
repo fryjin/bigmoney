@@ -12,6 +12,7 @@
     "build": "npm run build --workspace @bigmoney/web",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "test": "npm run test --workspaces --if-present",
+    "test:browser": "playwright test",
     "verify:structure": "node scripts/verify-structure.mjs",
     "check": "npm run verify:repository && npm run verify:structure && npm run typecheck && npm run test && npm run build && npm run verify:dist",
     "verify:repository": "node scripts/verify-repository.mjs",
@@ -23,6 +24,7 @@
     "npm": ">=10.0.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.62.1",
     "@types/node": "22.20.1",
     "@vitejs/plugin-vue": "6.0.8",
     "typescript": "6.0.3",
