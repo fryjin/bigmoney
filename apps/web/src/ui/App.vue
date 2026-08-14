@@ -15,11 +15,12 @@ import {
   quoteLiquidation,
   type DomainEvent,
   type GameState,
+  type LocalPlayerCount,
   type PlayerId
 } from '@bigmoney/game-core';
 import {
-  TechnicalSliceSession,
   type PresentationCue,
+  type TechnicalSliceSession,
   type TechnicalSliceSessionSnapshot,
   type StableFlowPhase
 } from '@bigmoney/game-flow';
@@ -29,6 +30,7 @@ import PlayerBar from './components/PlayerBar.vue';
 import ControlDock from './components/ControlDock.vue';
 import ContextPanel from './components/ContextPanel.vue';
 import LiquidationModal from './components/LiquidationModal.vue';
+import NewGameSetup from './components/NewGameSetup.vue';
 import {
   getScenePresentationPreferences,
   presentSceneCue
@@ -39,6 +41,10 @@ import {
   saveTechnicalSliceSave,
   type TechnicalSliceLoadResult
 } from '../session/persistence';
+import {
+  createTechnicalSliceSessionLifecycle,
+  isPrivateInfoHidden
+} from '../session/sessionLifecycle';
 import type { BrowserTestFixture } from '../session/browserTestFixtures';
 import { renderBrowserTestGameText } from '../session/browserTestProjection';
 
@@ -48,19 +54,8 @@ const props = defineProps<{
 }>();
 
 const initialSave = props.initialLoad.save;
-const random = initialSave
-  ? SeededRandom.fromSnapshot(initialSave.random)
-  : props.browserTestFixture
-    ? SeededRandom.fromSnapshot(props.browserTestFixture.random)
-    : new SeededRandom(20260805);
-
-const session = new TechnicalSliceSession(
-  random,
-  initialSave?.game ?? props.browserTestFixture?.game ?? createTechnicalSliceState(),
-  initialSave?.flow ?? props.browserTestFixture?.flow ?? 'turnReady'
-);
-
-const snapshot = shallowRef<TechnicalSliceSessionSnapshot>(session.getSnapshot());
+const initialSession = initialSave ?? props.browserTestFixture;
+const snapshot = shallowRef<TechnicalSliceSessionSnapshot | null>(null);
 const cardsOpen = ref(false);
 const assetsOpen = ref(false);
 const selectedStockId = ref('');
@@ -69,8 +64,11 @@ const selectedPeriod = ref<2 | 4 | 6>(2);
 const selectedLiquidationPropertyIds = ref<string[]>([]);
 const liquidationSubmitting = ref(false);
 const actionLocked = ref(false);
-const sessionAccepted = ref(props.initialLoad.status !== 'ready');
+const sessionAccepted = ref(false);
 const resumePromptOpen = ref(props.initialLoad.status === 'ready');
+const newGameSetupOpen = ref(initialSession === null);
+const newGameWillOverwrite = ref(initialSession !== null);
+const selectedPlayerCount = ref<LocalPlayerCount>(2);
 const recoveryNotice = ref(
   props.initialLoad.status === 'recovered' ? props.initialLoad.message : null
 );
@@ -84,21 +82,30 @@ const restoredHandoffFromPlayerId = ref<PlayerId | null>(
 let handledCueId = 0;
 let lastLoggedDomainRevision = -1;
 let lastSavedRoundKey = '';
-let saveQueue = Promise.resolve();
+let random: SeededRandom | null = null;
 
-const game = computed<GameState>(() => snapshot.value.game);
+const lifecycle = createTechnicalSliceSessionLifecycle(handleSessionSnapshot);
+
+const game = computed<GameState | null>(() => snapshot.value?.game ?? null);
 const activePlayer = computed(
-  () => game.value.players[game.value.activePlayerIndex]!
+  () => game.value?.players[game.value.activePlayerIndex] ?? null
 );
-const nextPlayer = computed(
-  () => game.value.players[(game.value.activePlayerIndex + 1) % game.value.players.length]!
-);
-const pending = computed(() => game.value.pendingInteraction);
-const handoffPending = computed(() => snapshot.value.flow === 'awaitingHandoff');
+const nextPlayer = computed(() => {
+  if (!game.value) return null;
+  const nextPlayerIndex = getNextActivePlayerIndex(
+    game.value,
+    game.value.activePlayerIndex
+  );
+  return nextPlayerIndex === null
+    ? null
+    : game.value.players[nextPlayerIndex] ?? null;
+});
+const pending = computed(() => game.value?.pendingInteraction ?? null);
+const handoffPending = computed(() => snapshot.value?.flow === 'awaitingHandoff');
 const liquidationInteraction = computed(() => {
   const interaction = pending.value;
   if (
-    snapshot.value.flow !== 'awaitingLiquidation' ||
+    snapshot.value?.flow !== 'awaitingLiquidation' ||
     interaction?.type !== 'LIQUIDATION'
   ) {
     return null;
@@ -107,20 +114,21 @@ const liquidationInteraction = computed(() => {
 });
 const liquidationCandidates = computed(() => {
   const interaction = liquidationInteraction.value;
-  if (!interaction) return [];
+  const currentGame = game.value;
+  if (!interaction || !currentGame) return [];
 
-  return getLiquidationCandidates(game.value, interaction.playerId).map((candidate) => ({
+  return getLiquidationCandidates(currentGame, interaction.playerId).map((candidate) => ({
     ...candidate,
     name:
       technicalSliceContent.properties.find(
         (property) => property.id === candidate.propertyId
       )?.name ?? candidate.propertyId,
-    level: game.value.properties[candidate.propertyId]?.level ?? 0
+    level: currentGame.properties[candidate.propertyId]?.level ?? 0
   }));
 });
 const liquidationQuote = computed(() => {
   const interaction = liquidationInteraction.value;
-  if (!interaction) return null;
+  if (!interaction || !game.value) return null;
   return quoteLiquidation(
     game.value,
     interaction.payment.id,
@@ -129,23 +137,23 @@ const liquidationQuote = computed(() => {
 });
 const liquidationReceiver = computed(() => {
   const receiverId = liquidationInteraction.value?.payment.receiverId;
-  if (!receiverId) return null;
+  if (!receiverId || !game.value) return null;
   return game.value.players.find((player) => player.id === receiverId) ?? null;
 });
 const activePlayerId = computed<string | null>(() =>
-  activePlayer.value.bankrupt ? null : activePlayer.value.id
+  activePlayer.value?.bankrupt ? null : activePlayer.value?.id ?? null
 );
 const presentingBankruptcy = computed(
-  () => snapshot.value.flow === 'presentingBankruptcy'
+  () => snapshot.value?.flow === 'presentingBankruptcy'
 );
 const presentingFinished = computed(
-  () => snapshot.value.flow === 'presentingFinished'
+  () => snapshot.value?.flow === 'presentingFinished'
 );
 const isFinishedFlow = computed(
-  () => presentingFinished.value || snapshot.value.flow === 'finished'
+  () => presentingFinished.value || snapshot.value?.flow === 'finished'
 );
 const bankruptcyEvent = computed(() =>
-  [...snapshot.value.lastEvents]
+  [...(snapshot.value?.lastEvents ?? [])]
     .reverse()
     .find((event): event is Extract<DomainEvent, { type: 'PLAYER_BANKRUPT' }> =>
       event.type === 'PLAYER_BANKRUPT'
@@ -153,43 +161,49 @@ const bankruptcyEvent = computed(() =>
 );
 const bankruptPlayer = computed(() => {
   const playerId = bankruptcyEvent.value?.playerId;
-  return game.value.players.find((player) => player.id === playerId) ?? null;
+  return game.value?.players.find((player) => player.id === playerId) ?? null;
 });
 const bankruptcyHandoffPlayer = computed(() => {
-  if (!bankruptPlayer.value) return null;
+  if (!bankruptPlayer.value || !game.value) return null;
   const nextIndex = getNextActivePlayerIndex(
     game.value,
     game.value.activePlayerIndex
   );
   return nextIndex === null ? null : game.value.players[nextIndex] ?? null;
 });
-const winner = computed(() =>
-  game.value.players.find((player) => player.id === game.value.winnerId) ?? null
-);
+const winner = computed(() => {
+  const currentGame = game.value;
+  return currentGame?.players.find((player) => player.id === currentGame.winnerId) ?? null;
+});
 const privateInfoHidden = computed(
   () =>
-    resumePromptOpen.value ||
-    snapshot.value.flow === 'presentingTurnEnd' ||
-    handoffPending.value
+    isPrivateInfoHidden(
+      snapshot.value?.flow ?? null,
+      resumePromptOpen.value || newGameSetupOpen.value
+    )
 );
-const renderBrowserTestSnapshot = () =>
-  renderBrowserTestGameText(session.getSnapshot(), privateInfoHidden.value);
+const renderBrowserTestSnapshot = () => {
+  const session = lifecycle.getSession();
+  return session
+    ? renderBrowserTestGameText(session.getSnapshot(), privateInfoHidden.value)
+    : 'NO_ACTIVE_SESSION';
+};
 
 if (import.meta.env.MODE === 'browser-test') {
   window.render_game_to_text = renderBrowserTestSnapshot;
 }
 const busy = computed(
-  () => snapshot.value.cue !== null || actionLocked.value || privateInfoHidden.value
+  () => snapshot.value?.cue != null || actionLocked.value || privateInfoHidden.value
 );
 const canRoll = computed(
-  () => snapshot.value.flow === 'turnReady' && !resumePromptOpen.value
+  () => snapshot.value?.flow === 'turnReady' && !resumePromptOpen.value && !newGameSetupOpen.value
 );
 const canEndTurn = computed(
-  () => snapshot.value.flow === 'turnEnd' && !resumePromptOpen.value
+  () => snapshot.value?.flow === 'turnEnd' && !resumePromptOpen.value && !newGameSetupOpen.value
 );
 
 const lastTurnEndedEvent = computed(() =>
-  [...snapshot.value.lastEvents]
+  [...(snapshot.value?.lastEvents ?? [])]
     .reverse()
     .find((event): event is Extract<DomainEvent, { type: 'TURN_ENDED' }> =>
       event.type === 'TURN_ENDED'
@@ -200,11 +214,12 @@ const handoffFromPlayerId = computed<PlayerId | null>(
   () => lastTurnEndedEvent.value?.playerId ?? restoredHandoffFromPlayerId.value
 );
 const handoffFromPlayer = computed(() =>
-  game.value.players.find((player) => player.id === handoffFromPlayerId.value) ?? null
+  game.value?.players.find((player) => player.id === handoffFromPlayerId.value) ?? null
 );
 
 const propertyCounts = computed<Record<string, number>>(() => {
   const counts: Record<string, number> = {};
+  if (!game.value) return counts;
   for (const property of Object.values(game.value.properties)) {
     if (!property.ownerId) continue;
     counts[property.ownerId] = (counts[property.ownerId] ?? 0) + 1;
@@ -225,9 +240,12 @@ const currentPropertyDefinition = computed(() => {
 });
 
 const statusMessage = computed(() => {
+  if (newGameSetupOpen.value) return '请选择玩家人数后开始新游戏';
   if (resumePromptOpen.value) return '检测到稳定存档，请选择继续或重新开始';
-  if (snapshot.value.flow === 'presentingTurnEnd') return '正在完成本回合并隐藏私有信息';
-  if (handoffPending.value) return `请将设备交给 ${activePlayer.value.name}`;
+  if (snapshot.value?.flow === 'presentingTurnEnd') return '正在完成本回合并隐藏私有信息';
+  if (handoffPending.value && activePlayer.value) {
+    return `请将设备交给 ${activePlayer.value.name}`;
+  }
 
   const interaction = pending.value;
   if (interaction?.type === 'STOCK_MARKET') return '经过金融中心：购买一只股票，或跳过后继续移动';
@@ -240,26 +258,30 @@ const statusMessage = computed(() => {
   if (liquidationInteraction.value) return '资金不足：请选择要清算的地产';
   if (presentingBankruptcy.value) return '正在呈现破产结果';
   if (presentingFinished.value) return '正在呈现最终结果';
-  if (snapshot.value.flow === 'finished') return '游戏已结束';
+  if (snapshot.value?.flow === 'finished') return '游戏已结束';
 
-  const last = snapshot.value.lastEvents.at(-1);
-  if (last?.type === 'DICE_ROLLED') return `${activePlayer.value.name} 掷出 ${last.value} 点`;
+  const last = snapshot.value?.lastEvents.at(-1);
+  if (last?.type === 'DICE_ROLLED' && activePlayer.value) {
+    return `${activePlayer.value.name} 掷出 ${last.value} 点`;
+  }
   if (last?.type === 'LAP_REWARD_GRANTED') return '完成一圈，银行奖励800万元';
   if (last?.type === 'PROPERTY_PURCHASED') return '地产购买成功，所有权标记已更新';
   if (last?.type === 'PROPERTY_UPGRADED') return `地产升级至 L${last.level}`;
   if (last?.type === 'RENT_PAID') return `支付租金 ${last.amount * 10}万元`;
   if (last?.type === 'TURN_ENDED') {
-    const player = game.value.players.find((candidate) => candidate.id === last.nextPlayerId);
+    const player = game.value?.players.find((candidate) => candidate.id === last.nextPlayerId);
     return `轮到 ${player?.name ?? last.nextPlayerId}`;
   }
-  if (snapshot.value.flow === 'turnEnd') {
+  if (snapshot.value?.flow === 'turnEnd' && nextPlayer.value) {
     return `本回合结算完成，请点击“结束并交给 ${nextPlayer.value.name}”`;
   }
   return '点击投骰，开始本回合';
 });
 
 const currentTileName = computed(() => {
-  const tile = technicalSliceContent.tiles[activePlayer.value.position];
+  const tile = activePlayer.value
+    ? technicalSliceContent.tiles[activePlayer.value.position]
+    : null;
   return tile?.name ?? '未知地格';
 });
 
@@ -269,8 +291,9 @@ const savedAtText = computed(() => {
   return Number.isNaN(date.getTime()) ? initialSave.savedAt : date.toLocaleString('zh-CN');
 });
 
-const unsubscribe = session.subscribe((next) => {
+function handleSessionSnapshot(next: TechnicalSliceSessionSnapshot): void {
   snapshot.value = next;
+  const generation = lifecycle.getGeneration();
 
   if (
     next.flow === 'presentingTurnEnd' ||
@@ -295,20 +318,22 @@ const unsubscribe = session.subscribe((next) => {
     lastLoggedDomainRevision = next.domainRevision;
     if (next.lastEvents.length > 0) {
       void logDomainEvents(next.lastEvents).catch((error: unknown) => {
+        if (lifecycle.getGeneration() !== generation) return;
         storageError.value = `事件日志写入失败：${errorMessage(error)}`;
       });
     }
   }
 
   if (sessionAccepted.value && isStableFlowPhase(next.flow)) {
-    queueStableSave(next);
+    queueStableSave(next, generation);
   }
 
   if (next.cue && next.cue.id !== handledCueId) {
     handledCueId = next.cue.id;
-    void runPresentation(next.cue);
+    const session = lifecycle.getSession();
+    if (session) void runPresentation(next.cue, session, generation);
   }
-});
+}
 
 watch(
   pending,
@@ -325,7 +350,7 @@ watch(
   () => {
     const interaction = liquidationInteraction.value;
     return interaction
-      ? `${interaction.payment.id}:${snapshot.value.domainRevision}`
+      ? `${interaction.payment.id}:${snapshot.value?.domainRevision}`
       : null;
   },
   () => {
@@ -352,12 +377,15 @@ onBeforeUnmount(() => {
   if (window.render_game_to_text === renderBrowserTestSnapshot) {
     delete window.render_game_to_text;
   }
-  unsubscribe();
-  session.destroy();
+  lifecycle.dispose();
 });
 
-function queueStableSave(next: TechnicalSliceSessionSnapshot): void {
+function queueStableSave(
+  next: TechnicalSliceSessionSnapshot,
+  generation: number
+): void {
   if (!isStableFlowPhase(next.flow)) return;
+  if (!random) return;
   const flow = next.flow;
   const saveKey = [
     flow,
@@ -380,47 +408,66 @@ function queueStableSave(next: TechnicalSliceSessionSnapshot): void {
         : restoredHandoffFromPlayerId.value
       : null;
 
-  saveQueue = saveQueue
-    .then(async () => {
+  lifecycle.enqueueForActiveSession(
+    async () => {
       await saveTechnicalSliceSave(
         gameSnapshot,
         randomSnapshot,
         flow,
         fromPlayerId
       );
-      storageError.value = '';
-    })
-    .catch((error: unknown) => {
+      if (lifecycle.getGeneration() === generation) {
+        storageError.value = '';
+      }
+    },
+    (error: unknown) => {
       storageError.value = `稳定存档写入失败：${errorMessage(error)}`;
       lastSavedRoundKey = '';
-    });
+    }
+  );
 }
 
-async function runPresentation(cue: PresentationCue): Promise<void> {
+async function runPresentation(
+  cue: PresentationCue,
+  sourceSession: TechnicalSliceSession,
+  generation: number
+): Promise<void> {
   try {
     await presentSceneCue(cue);
   } catch (error) {
-    presentationError.value = `场景表现降级完成：${errorMessage(error)}`;
-  } finally {
-    const current = session.getSnapshot();
-    if (
-      current.cue?.id === cue.id &&
-      (current.flow === 'presentingBankruptcy' ||
-        current.flow === 'presentingFinished')
-    ) {
-      presentationReadyCueId.value = cue.id;
-      return;
+    if (lifecycle.getGeneration() === generation) {
+      presentationError.value = `场景表现降级完成：${errorMessage(error)}`;
     }
-    session.presentationDone(cue.id);
   }
+  if (
+    lifecycle.getGeneration() !== generation ||
+    lifecycle.getSession() !== sourceSession
+  ) return;
+
+  const current = sourceSession.getSnapshot();
+  if (
+    current.cue?.id === cue.id &&
+    (current.flow === 'presentingBankruptcy' ||
+      current.flow === 'presentingFinished')
+  ) {
+    presentationReadyCueId.value = cue.id;
+    return;
+  }
+  sourceSession.presentationDone(cue.id);
 }
 
-function performAction(operation: () => void): void {
-  if (actionLocked.value || resumePromptOpen.value) return;
+function performAction(operation: (session: TechnicalSliceSession) => void): void {
+  const session = lifecycle.getSession();
+  if (
+    !session ||
+    actionLocked.value ||
+    resumePromptOpen.value ||
+    newGameSetupOpen.value
+  ) return;
   actionLocked.value = true;
 
   try {
-    operation();
+    operation(session);
   } finally {
     queueMicrotask(() => {
       actionLocked.value = false;
@@ -429,45 +476,45 @@ function performAction(operation: () => void): void {
 }
 
 function roll(): void {
-  performAction(() => session.roll());
+  performAction((session) => session.roll());
 }
 
 function endTurn(): void {
   cardsOpen.value = false;
   assetsOpen.value = false;
-  performAction(() => session.endTurn());
+  performAction((session) => session.endTurn());
 }
 
 function confirmHandoff(): void {
-  performAction(() => {
+  performAction((session) => {
     restoredHandoffFromPlayerId.value = null;
     session.confirmHandoff();
   });
 }
 
 function buyProperty(): void {
-  performAction(() => session.buyProperty());
+  performAction((session) => session.buyProperty());
 }
 
 function skipProperty(): void {
-  performAction(() => session.skipProperty());
+  performAction((session) => session.skipProperty());
 }
 
 function upgradeProperty(): void {
-  performAction(() => session.upgradeProperty());
+  performAction((session) => session.upgradeProperty());
 }
 
 function skipUpgrade(): void {
-  performAction(() => session.skipUpgrade());
+  performAction((session) => session.skipUpgrade());
 }
 
 function skipStock(): void {
-  performAction(() => session.resolveStockMarket(null));
+  performAction((session) => session.resolveStockMarket(null));
 }
 
 function buyStock(): void {
   if (!selectedStockId.value) return;
-  performAction(() => {
+  performAction((session) => {
     session.resolveStockMarket({
       stockId: selectedStockId.value,
       principal: selectedPrincipal.value,
@@ -477,11 +524,11 @@ function buyStock(): void {
 }
 
 function acknowledgeResult(): void {
-  performAction(() => session.acknowledgeResult());
+  performAction((session) => session.acknowledgeResult());
 }
 
 function discardCard(cardInstanceId: string): void {
-  performAction(() => session.chooseCardToDiscard(cardInstanceId));
+  performAction((session) => session.chooseCardToDiscard(cardInstanceId));
 }
 
 function toggleLiquidationProperty(propertyId: string): void {
@@ -505,7 +552,7 @@ function confirmLiquidation(): void {
   }
 
   liquidationSubmitting.value = true;
-  performAction(() => {
+  performAction((session) => {
     session.confirmLiquidation(
       interaction.payment.id,
       [...selectedLiquidationPropertyIds.value]
@@ -524,7 +571,7 @@ function acknowledgePresentationResult(): void {
     handoffActivationPending.value = true;
   }
   presentationReadyCueId.value = null;
-  performAction(() => session.presentationDone(cueId));
+  performAction((session) => session.presentationDone(cueId));
   if (delayHandoffActivation) {
     window.requestAnimationFrame(() => {
       handoffActivationPending.value = false;
@@ -533,10 +580,12 @@ function acknowledgePresentationResult(): void {
 }
 
 function continueSavedGame(): void {
+  const currentSnapshot = snapshot.value;
+  if (!currentSnapshot) return;
   sessionAccepted.value = true;
   resumePromptOpen.value = false;
-  if (isStableFlowPhase(snapshot.value.flow)) {
-    queueStableSave(snapshot.value);
+  if (isStableFlowPhase(currentSnapshot.flow)) {
+    queueStableSave(currentSnapshot, lifecycle.getGeneration());
   }
   if (props.initialLoad.migrated && props.initialLoad.message) {
     recoveryNotice.value = props.initialLoad.message;
@@ -556,24 +605,87 @@ function cardName(cardInstanceId: string): string {
 
 function eventAmount(event: DomainEvent): string | null {
   if (event.type !== 'EVENT_RESOLVED') return null;
-  const change = event.changes.find((item) => item.playerId === activePlayer.value.id);
+  const activePlayerId = activePlayer.value?.id;
+  if (!activePlayerId) return null;
+  const change = event.changes.find((item) => item.playerId === activePlayerId);
   if (!change) return null;
   return `${change.amount > 0 ? '+' : ''}${change.amount * 10}万元`;
 }
 
-async function resetTechnicalSlice(): Promise<void> {
+function resetTechnicalSlice(): void {
+  if (actionLocked.value) return;
+  sessionAccepted.value = false;
+  resumePromptOpen.value = false;
+  newGameSetupOpen.value = true;
+  newGameWillOverwrite.value = lifecycle.getSession() !== null;
+  selectedPlayerCount.value = 2;
+  clearSessionTransientUi();
+}
+
+async function startNewGame(): Promise<void> {
   if (actionLocked.value) return;
   actionLocked.value = true;
+  const playerCount = selectedPlayerCount.value;
+  sessionAccepted.value = false;
 
   try {
-    sessionAccepted.value = false;
-    await saveQueue;
-    await clearTechnicalSliceSave();
-    window.location.reload();
+    const cleared = lifecycle.retireAndDrain(async () => {
+      await clearTechnicalSliceSave();
+    });
+    clearSessionTransientUi();
+    snapshot.value = null;
+    await cleared;
+    startSession(
+      {
+        random: new SeededRandom(20260805),
+        game: createTechnicalSliceState(playerCount),
+        flow: 'turnReady'
+      },
+      true,
+      null
+    );
+    newGameSetupOpen.value = false;
+    newGameWillOverwrite.value = false;
   } catch (error) {
-    storageError.value = `无法清除存档：${errorMessage(error)}`;
+    storageError.value = `无法覆盖存档：${errorMessage(error)}`;
     actionLocked.value = false;
   }
+}
+
+function startSession(
+  seed: {
+    random: SeededRandom;
+    game: GameState;
+    flow: StableFlowPhase;
+  },
+  accepted: boolean,
+  handoffFromPlayerId: PlayerId | null
+): void {
+  clearSessionTransientUi();
+  actionLocked.value = false;
+  random = seed.random;
+  sessionAccepted.value = accepted;
+  restoredHandoffFromPlayerId.value = handoffFromPlayerId;
+  lifecycle.start(seed);
+}
+
+function clearSessionTransientUi(): void {
+  cardsOpen.value = false;
+  assetsOpen.value = false;
+  selectedStockId.value = '';
+  selectedPrincipal.value = 50;
+  selectedPeriod.value = 2;
+  selectedLiquidationPropertyIds.value = [];
+  liquidationSubmitting.value = false;
+  actionLocked.value = false;
+  storageError.value = '';
+  presentationError.value = '';
+  presentationReadyCueId.value = null;
+  handoffActivationPending.value = false;
+  restoredHandoffFromPlayerId.value = null;
+  handledCueId = 0;
+  lastLoggedDomainRevision = -1;
+  lastSavedRoundKey = '';
 }
 
 function errorMessage(error: unknown): string {
@@ -588,11 +700,30 @@ function isStableFlowPhase(flow: string): flow is StableFlowPhase {
     flow === 'finished'
   );
 }
+
+function clearSessionError(): void {
+  lifecycle.getSession()?.clearError();
+}
+
+if (initialSession) {
+  startSession(
+    {
+      random: initialSave
+        ? SeededRandom.fromSnapshot(initialSave.random)
+        : SeededRandom.fromSnapshot(props.browserTestFixture!.random),
+      game: initialSession.game,
+      flow: initialSession.flow
+    },
+    initialSave === null,
+    initialSave?.handoffFromPlayerId ?? null
+  );
+}
 </script>
 
 <template>
   <main class="app-shell" :class="{ 'private-info-hidden': privateInfoHidden }">
-    <GameCanvas :game-state="game" />
+    <template v-if="snapshot && game && activePlayer">
+      <GameCanvas :game-state="game" />
 
     <PlayerBar
       :players="game.players"
@@ -640,7 +771,7 @@ function isStableFlowPhase(flow: string): flow is StableFlowPhase {
       :busy="busy"
       :card-count="activePlayer.cards.length"
       :stock-count="activePlayer.stocks.length"
-      :next-player-name="nextPlayer.name"
+      :next-player-name="nextPlayer?.name ?? ''"
       @roll="roll"
       @end-turn="endTurn"
       @toggle-cards="cardsOpen = !cardsOpen; assetsOpen = false"
@@ -653,8 +784,8 @@ function isStableFlowPhase(flow: string): flow is StableFlowPhase {
       eyebrow="Cards"
       @close="cardsOpen = false"
     >
-      <div v-if="activePlayer.cards.length" class="collection-grid">
-        <article v-for="card in activePlayer.cards" :key="card.instanceId" class="collection-card">
+      <div v-if="activePlayer?.cards.length" class="collection-grid">
+        <article v-for="card in activePlayer?.cards ?? []" :key="card.instanceId" class="collection-card">
           <span class="card-rarity">CARD</span>
           <strong>{{ technicalSliceContent.cards.find((item) => item.id === card.cardId)?.name }}</strong>
           <small>{{ technicalSliceContent.cards.find((item) => item.id === card.cardId)?.description }}</small>
@@ -672,14 +803,14 @@ function isStableFlowPhase(flow: string): flow is StableFlowPhase {
       <div class="asset-summary">
         <h3>地产</h3>
         <article
-          v-for="property in Object.values(game.properties).filter((item) => item.ownerId === activePlayer.id)"
+          v-for="property in Object.values(game.properties).filter((item) => item.ownerId === activePlayer?.id)"
           :key="property.id"
           class="asset-row"
         >
           <span>{{ technicalSliceContent.properties.find((item) => item.id === property.id)?.name }}</span>
           <b>L{{ property.level }}</b>
         </article>
-        <p v-if="!Object.values(game.properties).some((item) => item.ownerId === activePlayer.id)" class="empty-state">
+        <p v-if="!Object.values(game.properties).some((item) => item.ownerId === activePlayer?.id)" class="empty-state">
           暂无地产。
         </p>
 
@@ -985,7 +1116,7 @@ function isStableFlowPhase(flow: string): flow is StableFlowPhase {
 
     <div v-if="snapshot.error" class="error-toast" role="alert">
       {{ snapshot.error }}
-      <button type="button" @click="session.clearError()">×</button>
+      <button type="button" @click="clearSessionError">×</button>
     </div>
 
     <div v-else-if="storageError" class="error-toast" role="alert">
@@ -998,11 +1129,22 @@ function isStableFlowPhase(flow: string): flow is StableFlowPhase {
       <button type="button" @click="presentationError = ''">×</button>
     </div>
 
+    </template>
+
+    <NewGameSetup
+      v-if="newGameSetupOpen"
+      :selected-player-count="selectedPlayerCount"
+      :overwrites-existing-save="newGameWillOverwrite"
+      :busy="actionLocked"
+      @select-player-count="selectedPlayerCount = $event"
+      @start="startNewGame"
+    />
+
     <div v-if="recoveryNotice" class="recovery-toast" role="status">
       {{ recoveryNotice }}
       <button type="button" @click="recoveryNotice = null">知道了</button>
     </div>
 
-    <div class="build-badge">PHASE 2.0A · PAYMENT & LIQUIDATION</div>
+    <div class="build-badge">PHASE 2.1 · 2–4 PLAYER LOCAL GAME</div>
   </main>
 </template>
