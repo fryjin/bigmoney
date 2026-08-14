@@ -912,7 +912,7 @@ button {
   }
 }
 
-/* Phase 1.4: stable handoff, save recovery and duplicate-action protection */
+/* Phase 2.1: stable handoff, save recovery and duplicate-action protection */
 .private-info-hidden .players-bar,
 .private-info-hidden .status-pill {
   filter: saturate(0.72);
@@ -1189,6 +1189,82 @@ button {
   border-radius: 34px;
 }
 
+.new-game-setup {
+  width: min(560px, calc(100vw - 56px));
+}
+
+.new-game-counts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 24px;
+}
+
+.new-game-count {
+  display: grid;
+  min-height: 88px;
+  align-content: center;
+  gap: 4px;
+  border: 1px solid rgba(34, 52, 58, 0.14);
+  border-radius: 18px;
+  background: #f5f8f5;
+  color: #41565a;
+  cursor: pointer;
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    transform 160ms ease;
+}
+
+.new-game-count strong {
+  font-size: 22px;
+}
+
+.new-game-count small {
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.new-game-count:hover:not(:disabled),
+.new-game-count:focus-visible {
+  border-color: #4c9c8a;
+  box-shadow: 0 0 0 3px rgba(76, 156, 138, 0.2);
+  outline: none;
+}
+
+.new-game-count:hover:not(:disabled) {
+  transform: translateY(-1px);
+}
+
+.new-game-count.selected {
+  border-color: #347f70;
+  background: #e1f0ea;
+  box-shadow: inset 0 -3px #347f70;
+  color: #1e5d51;
+}
+
+.new-game-count:disabled {
+  cursor: wait;
+  opacity: 0.58;
+}
+
+.new-game-overwrite-warning {
+  margin-top: 18px !important;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: #fff2d5;
+  color: #805f24 !important;
+  font-weight: 800;
+}
+
+.new-game-actions {
+  margin-top: 18px;
+}
+
+.new-game-actions .primary-action {
+  min-height: 52px;
+}
+
 .session-entry-card h1 {
   font-size: 32px;
 }
@@ -1297,14 +1373,15 @@ button {
   .players-bar {
     left: 12px;
     right: 12px;
-    justify-content: center;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 6px;
     transform: none;
   }
 
   .player-chip {
     grid-template-columns: 34px minmax(0, 1fr);
-    flex: 1 1 0;
+    width: 100%;
     min-width: 0;
     padding-right: 9px;
   }
@@ -1407,6 +1484,14 @@ button {
   .modal-actions .secondary-action,
   .liquidation-submit {
     width: 100%;
+  }
+
+  .new-game-counts {
+    grid-template-columns: 1fr;
+  }
+
+  .new-game-count {
+    min-height: 64px;
   }
 }
 
