@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   createTechnicalSliceState,
   type GameState,
-  type PlayerState
+  type LocalPlayerCount
 } from '@bigmoney/game-core';
 import { SequenceRandom } from '@bigmoney/game-random';
 import { TechnicalSliceSession } from '../src/index';
@@ -114,9 +114,8 @@ describe('forced payment flow orchestration', () => {
     const session = createRentSession((state) => {
       state.players[1]!.cash = 10;
       state.properties.A2!.ownerId = 'P2';
-      state.players.push(createPlayerLike(state.players[0]!, 'P3', true));
-      state.players.push(createPlayerLike(state.players[0]!, 'P4', false));
-    });
+      state.players[2]!.bankrupt = true;
+    }, 4);
 
     reachDestination(session);
     session.confirmLiquidation('PAYMENT-0001', ['A2']);
@@ -140,12 +139,9 @@ describe('forced payment flow orchestration', () => {
   });
 
   it('uses the Core turn operation to skip multiple bankrupt players after a normal turn', () => {
-    const state = createTechnicalSliceState();
-    state.players.push(
-      createPlayerLike(state.players[0]!, 'P3', true),
-      createPlayerLike(state.players[0]!, 'P4', false)
-    );
+    const state = createTechnicalSliceState(4);
     state.players[1]!.bankrupt = true;
+    state.players[2]!.bankrupt = true;
     const session = new TechnicalSliceSession(new SequenceRandom([1]), state);
 
     session.roll();
@@ -247,8 +243,11 @@ describe('forced payment flow orchestration', () => {
   });
 });
 
-function createRentSession(configure: (state: GameState) => void): TechnicalSliceSession {
-  const state = createTechnicalSliceState();
+function createRentSession(
+  configure: (state: GameState) => void,
+  playerCount: LocalPlayerCount = 2
+): TechnicalSliceSession {
+  const state = createTechnicalSliceState(playerCount);
   state.activePlayerIndex = 1;
   state.players[1]!.position = 0;
   state.properties.A1!.ownerId = 'P1';
@@ -261,21 +260,4 @@ function reachDestination(session: TechnicalSliceSession): void {
   session.roll();
   session.presentationDone(session.getSnapshot().cue!.id);
   session.presentationDone(session.getSnapshot().cue!.id);
-}
-
-function createPlayerLike(
-  player: PlayerState,
-  id: string,
-  bankrupt: boolean
-): PlayerState {
-  return {
-    ...structuredClone(player),
-    id,
-    name: id,
-    cash: 500,
-    position: 0,
-    bankrupt,
-    cards: [],
-    stocks: []
-  };
 }
