@@ -7,6 +7,7 @@ export type CardId = string;
 export type TileId = string;
 export type Money = number;
 export type GameStatus = 'IN_PROGRESS' | 'FINISHED';
+export type LocalPlayerCount = 2 | 3 | 4;
 
 interface ForcedPaymentBase {
   id: string;
@@ -75,6 +76,19 @@ export interface PlayerState {
   cards: CardInstance[];
   stocks: StockHolding[];
 }
+
+export interface DefaultLocalPlayer {
+  readonly id: PlayerId;
+  readonly name: string;
+  readonly color: string;
+}
+
+export const DEFAULT_LOCAL_ROSTER: readonly DefaultLocalPlayer[] = Object.freeze([
+  Object.freeze({ id: 'P1', name: '玩家一', color: '#E87868' }),
+  Object.freeze({ id: 'P2', name: '玩家二', color: '#4F8FB8' }),
+  Object.freeze({ id: 'P3', name: '玩家三', color: '#7E68B8' }),
+  Object.freeze({ id: 'P4', name: '玩家四', color: '#5E9B72' })
+]);
 
 export interface PropertyState {
   id: PropertyId;

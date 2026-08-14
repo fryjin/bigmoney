@@ -245,7 +245,7 @@
     {
       "id": "EVENT_NEIGHBOR_SUPPORT",
       "name": "邻里互助",
-      "description": "另一名玩家向你转账200万元。",
+      "description": "下一名仍在游戏中的玩家向你转账200万元。",
       "kind": "PLAYER_TRANSFER",
       "amount": 20
     },

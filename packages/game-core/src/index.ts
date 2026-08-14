@@ -19,6 +19,7 @@ export {
 
 export type {
   PlayerId,
+  LocalPlayerCount,
   PropertyId,
   StockId,
   CardId,
@@ -31,6 +32,7 @@ export type {
   CardInstance,
   StockHolding,
   PlayerState,
+  DefaultLocalPlayer,
   PropertyState,
   TurnState,
   PendingInteraction,
@@ -46,4 +48,8 @@ export type {
   DomainEvent,
   CommandResult,
   EngineOptions
+} from './model';
+
+export {
+  DEFAULT_LOCAL_ROSTER
 } from './model';

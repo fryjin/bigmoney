@@ -358,11 +358,7 @@ describe('forced payment, liquidation, and bankruptcy', () => {
   });
 
   it('advances a bankrupt player to the next active player with a fresh turn', () => {
-    const state = createTechnicalSliceState();
-    state.players.push(
-      { ...structuredClone(state.players[0]!), id: 'P3', name: 'Player 3' },
-      { ...structuredClone(state.players[0]!), id: 'P4', name: 'Player 4' }
-    );
+    const state = createTechnicalSliceState(4);
     state.activePlayerIndex = 1;
     state.players[1]!.bankrupt = true;
     state.turn = {
