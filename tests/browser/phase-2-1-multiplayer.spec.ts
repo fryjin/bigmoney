@@ -510,11 +510,16 @@ async function waitForStableSave(): Promise<void> {
 }
 
 async function readGameText(page: Page): Promise<BrowserGameText> {
+  await page.waitForFunction(
+    () => typeof window.render_game_to_text === 'function'
+  );
+
   return page.evaluate(() => {
-    if (typeof window.render_game_to_text !== 'function') {
+    const renderGameToText = window.render_game_to_text;
+    if (typeof renderGameToText !== 'function') {
       throw new Error('browser-test state projection is unavailable.');
     }
-    const text = window.render_game_to_text();
+    const text = renderGameToText();
     return text === 'NO_ACTIVE_SESSION'
       ? { flow: 'noActiveSession', status: 'UNAVAILABLE' }
       : JSON.parse(text) as BrowserGameText;
