@@ -11,7 +11,14 @@ describe('browser test fixtures', () => {
     'solvent-rent',
     'partial-liquidation',
     'three-player-bankruptcy-handoff',
-    'two-player-bankruptcy-finished'
+    'two-player-bankruptcy-finished',
+    'four-player-skip-p2',
+    'four-player-skip-p2-p3',
+    'four-player-partial-liquidation',
+    'three-player-finished-p3',
+    'four-player-finished-p3',
+    'four-player-player-transfer',
+    'four-player-presentation'
   ];
 
   it('only resolves a fixed fixture name in browser-test mode', () => {
@@ -47,6 +54,35 @@ describe('browser test fixtures', () => {
       A1: { ownerId: 'P1', level: 3 },
       A2: { ownerId: 'P2', level: 0 }
     });
+  });
+
+  it('creates each multiplayer fixture from the canonical Core roster', () => {
+    const expectedPlayerIds = {
+      'four-player-skip-p2': ['P1', 'P2', 'P3', 'P4'],
+      'four-player-skip-p2-p3': ['P1', 'P2', 'P3', 'P4'],
+      'four-player-partial-liquidation': ['P1', 'P2', 'P3', 'P4'],
+      'three-player-finished-p3': ['P1', 'P2', 'P3'],
+      'four-player-finished-p3': ['P1', 'P2', 'P3', 'P4'],
+      'four-player-player-transfer': ['P1', 'P2', 'P3', 'P4'],
+      'four-player-presentation': ['P1', 'P2', 'P3', 'P4']
+    } as const;
+
+    for (const [fixtureName, playerIds] of Object.entries(expectedPlayerIds)) {
+      const fixture = getBrowserTestFixture(
+        'browser-test',
+        fixtureName as BrowserTestFixtureName
+      );
+
+      expect(fixture?.game.players.map((player) => player.id)).toEqual(playerIds);
+      expect(fixture?.game.players.map((player) => player.name)).toEqual(
+        playerIds.map((playerId) => ({
+          P1: '玩家一',
+          P2: '玩家二',
+          P3: '玩家三',
+          P4: '玩家四'
+        })[playerId])
+      );
+    }
   });
 
   it('does not select a fixture when Persistence already restored a valid save', () => {
