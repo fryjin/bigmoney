@@ -4,6 +4,7 @@ export default defineConfig({
   testDir: './tests/browser',
   outputDir: 'test-results',
   fullyParallel: false,
+  workers: 1,
   timeout: 30_000,
   expect: {
     timeout: 10_000

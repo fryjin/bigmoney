@@ -7,8 +7,8 @@
 - 不使用未注入的 `Math.random()`；所有随机结果必须来自 `@bigmoney/game-random`。
 - 不把 Vue 响应式状态或 Phaser GameObject 当作游戏真实状态。
 - 不新增交易、贷款、联网、AI玩家、分支地图等未纳入MVP的系统。
-- Phase 1.4 不自行补齐清算、破产、监狱、合作项目、36格地图等后续模块。
-- 从 Phase 2.0 起，任何强制付款、清算或破产改动必须先阅读 `CODEX_TASK_PHASE_2_0.md`。
+- Phase 2.1 只扩展 2–4 名玩家同设备本地对局；不得自行补齐监狱、合作项目、36格地图等后续模块。
+- 从 Phase 2.0 起，任何强制付款、清算或破产改动必须先阅读当前阶段任务书；当前为 `CODEX_TASK_PHASE_2_1.md`。
 
 ## 强制数据流
 
@@ -52,9 +52,9 @@ UI/场景输入
 6. 构建失败不得通过删除测试、关闭类型检查或使用 `any` 大面积绕过。
 
 
-## Phase 1.4 稳定边界
+## 稳定流程、存档与交接边界
 
-- `turnReady` 与 `awaitingHandoff` 是当前允许写入存档的稳定流程状态。
+- `turnReady`、`awaitingHandoff`、`awaitingLiquidation` 与 `finished` 是当前允许写入存档的稳定流程状态。
 - 玩家交接必须经过显式确认；交接期间隐藏手牌、持仓与当前玩家资产入口。
 - 存档 Schema 必须校验版本、稳定状态和完整性标记；损坏存档需隔离，不能直接强制解析。
 - 所有会产生领域命令的 UI 按钮必须具备重复点击保护。
@@ -63,7 +63,7 @@ UI/场景输入
 ## Codex 本地开发
 
 - 本地 Codex 起点：`CODEX_START_HERE.md`。
-- 下一阶段任务边界：`CODEX_TASK_PHASE_2_0.md`。
+- 当前阶段任务边界：`CODEX_TASK_PHASE_2_1.md`。
 - 首次进入仓库执行：`npm run codex:preflight`。
 
 ## 项目级 External Game Skills 路由

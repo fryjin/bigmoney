@@ -1,6 +1,6 @@
 # Big Money 本地 Codex 起点
 
-从 **Phase 2.0：Payment / Liquidation / Bankruptcy** 开始，改动会同时跨越 Game Core、XState Flow、Vue 决策界面、存档和测试。建议改为本地 Codex 主导实现，ChatGPT 继续负责规则确认、视觉方案、验收和变更包审查。
+当前阶段为 **Phase 2.1：Full 2–4 Player Local Game**。改动会跨越 Game Core、XState Flow、Vue、Phaser、存档和浏览器测试；本地 Codex 负责实现与验证，产品规则、视觉方案和验收边界以项目文档为准。
 
 ## 1. 准备仓库
 
@@ -30,16 +30,16 @@ codex
 
 1. `AGENTS.md`
 2. `docs/rules-baseline.md`
-3. `docs/development/phase-1.4-technical-slice-closeout.md`
-4. `CODEX_TASK_PHASE_2_0.md`
+3. `CODEX_SKILLS_SETUP.md`
+4. `CODEX_TASK_PHASE_2_1.md`
 5. `docs/design/ui-2.5d-visual-guidelines-v1.0.md`
 
 ## 3. 首次任务提示词
 
 ```text
-读取 AGENTS.md、docs/rules-baseline.md、docs/development/phase-1.4-technical-slice-closeout.md 和 CODEX_TASK_PHASE_2_0.md。
-先运行 npm run check，确认 Phase 1.4 基线通过。
-然后只实施 Phase 2.0A：统一强制付款、地产清算和破产淘汰，不扩展监狱、合作项目、36格地图或正式美术。
+读取 AGENTS.md、docs/rules-baseline.md、CODEX_SKILLS_SETUP.md 和 CODEX_TASK_PHASE_2_1.md。
+先运行 npm run codex:preflight 与 npm run check，确认已合并的 Phase 2.0A 基线通过。
+然后只实施 Phase 2.1：在既有 8-node technical slice 中完成正式 2–4 名同设备本地玩家对局；不扩展监狱、合作项目、36格地图、正式美术、AI 或联网系统。
 先输出实施计划和预计修改文件，再执行代码修改。
 完成后运行 npm run check，并汇报测试覆盖、未解决风险和 git diff 摘要。
 ```

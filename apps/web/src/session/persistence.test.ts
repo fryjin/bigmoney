@@ -26,23 +26,27 @@ beforeEach(async () => {
 });
 
 describe('technical slice persistence', () => {
-  it('writes and validates a stable schema v3 turn-ready save', async () => {
-    const random = new SeededRandom(20260805);
-    const state = createTechnicalSliceState();
+  it.each([2, 3, 4] as const)(
+    'writes and validates a stable schema v3 %i-player turn-ready save',
+    async (playerCount) => {
+      const random = new SeededRandom(20260805);
+      const state = createTechnicalSliceState(playerCount);
 
-    const written = await saveTechnicalSliceSave(
-      state,
-      random.getSnapshot(),
-      'turnReady'
-    );
-    const loaded = await loadTechnicalSliceSave();
+      const written = await saveTechnicalSliceSave(
+        state,
+        random.getSnapshot(),
+        'turnReady'
+      );
+      const loaded = await loadTechnicalSliceSave();
 
-    expect(written.schemaVersion).toBe(CURRENT_SAVE_SCHEMA_VERSION);
-    expect(written.integrity).toMatch(/^fnv1a32:/);
-    expect(loaded.status).toBe('ready');
-    expect(loaded.save?.game).toEqual(state);
-    expect(loaded.save?.flow).toBe('turnReady');
-  });
+      expect(written.schemaVersion).toBe(CURRENT_SAVE_SCHEMA_VERSION);
+      expect(written.integrity).toMatch(/^fnv1a32:/);
+      expect(loaded.status).toBe('ready');
+      expect(loaded.save?.game).toEqual(state);
+      expect(loaded.save?.game.players).toHaveLength(playerCount);
+      expect(loaded.save?.flow).toBe('turnReady');
+    }
+  );
 
   it('migrates the existing schema v1 stable save', async () => {
     const random = new SeededRandom(7);
@@ -63,6 +67,7 @@ describe('technical slice persistence', () => {
     expect(loaded.save?.flow).toBe('turnReady');
     expect(loaded.save?.game.status).toBe('IN_PROGRESS');
     expect(loaded.save?.game.winnerId).toBeNull();
+    expect(loaded.save?.game.players).toHaveLength(2);
   });
 
   it('quarantines a corrupted save and clears the active slot', async () => {
@@ -93,71 +98,111 @@ describe('technical slice persistence', () => {
     await deleteSnapshot(TECHNICAL_SLICE_QUARANTINE_SLOT);
   });
 
-  it('preserves the awaiting-handoff recovery boundary', async () => {
-    const random = new SeededRandom(13);
-    const state = createTechnicalSliceState();
-    state.activePlayerIndex = 1;
+  it.each([2, 3, 4] as const)(
+    'preserves the %i-player awaiting-handoff recovery boundary',
+    async (playerCount) => {
+      const random = new SeededRandom(13);
+      const state = createTechnicalSliceState(playerCount);
+      state.activePlayerIndex = playerCount - 1;
 
-    await saveTechnicalSliceSave(
-      state,
-      random.getSnapshot(),
-      'awaitingHandoff',
-      'P1'
-    );
+      await saveTechnicalSliceSave(
+        state,
+        random.getSnapshot(),
+        'awaitingHandoff',
+        'P1'
+      );
 
-    const loaded = await loadTechnicalSliceSave();
+      const loaded = await loadTechnicalSliceSave();
 
-    expect(loaded.status).toBe('ready');
-    expect(loaded.save?.flow).toBe('awaitingHandoff');
-    expect(loaded.save?.handoffFromPlayerId).toBe('P1');
-  });
+      expect(loaded.status).toBe('ready');
+      expect(loaded.save?.flow).toBe('awaitingHandoff');
+      expect(loaded.save?.handoffFromPlayerId).toBe('P1');
+      expect(loaded.save?.game).toEqual(state);
+    }
+  );
 
-  it('round-trips awaiting liquidation with its canonical debt and completed liquidation mutations', async () => {
-    const random = new SeededRandom(17);
-    const state = createAwaitingLiquidationState();
+  it.each([3, 4] as const)(
+    'round-trips %i-player awaiting liquidation with its canonical debt and completed liquidation mutations',
+    async (playerCount) => {
+      const random = new SeededRandom(17);
+      const state = createAwaitingLiquidationState(playerCount);
 
-    const written = await saveTechnicalSliceSave(
-      state,
-      random.getSnapshot(),
-      'awaitingLiquidation'
-    );
-    const loaded = await loadTechnicalSliceSave();
-    const pending = loaded.save?.game.pendingInteraction;
+      const written = await saveTechnicalSliceSave(
+        state,
+        random.getSnapshot(),
+        'awaitingLiquidation'
+      );
+      const loaded = await loadTechnicalSliceSave();
+      const pending = loaded.save?.game.pendingInteraction;
 
-    expect(written.flow).toBe('awaitingLiquidation');
-    expect(written.handoffFromPlayerId).toBeNull();
-    expect(loaded.status).toBe('ready');
-    expect(loaded.save?.game).toEqual(state);
-    expect(loaded.save?.random).toEqual(random.getSnapshot());
-    expect(pending).toMatchObject({
-      type: 'LIQUIDATION',
-      payment: {
-        id: 'PAYMENT-0001',
-        amount: 75,
-        payerId: 'P2',
-        receiverId: 'P1',
-        reason: 'RENT'
-      }
-    });
-    expect(loaded.save?.game.properties.A2).toMatchObject({ ownerId: null, level: 0 });
-    expect('selectedPropertyIds' in written).toBe(false);
-    expect('selectedPropertyIds' in written.game).toBe(false);
-  });
+      expect(written.flow).toBe('awaitingLiquidation');
+      expect(written.handoffFromPlayerId).toBeNull();
+      expect(loaded.status).toBe('ready');
+      expect(loaded.save?.game).toEqual(state);
+      expect(loaded.save?.game.players).toHaveLength(playerCount);
+      expect(loaded.save?.random).toEqual(random.getSnapshot());
+      expect(pending).toMatchObject({
+        type: 'LIQUIDATION',
+        payment: {
+          id: 'PAYMENT-0001',
+          amount: 75,
+          payerId: 'P2',
+          receiverId: 'P1',
+          reason: 'RENT'
+        }
+      });
+      expect(loaded.save?.game.properties.A2).toMatchObject({ ownerId: null, level: 0 });
+      expect('selectedPropertyIds' in written).toBe(false);
+      expect('selectedPropertyIds' in written.game).toBe(false);
+    }
+  );
 
-  it('round-trips finished with the winner and final GameState untouched', async () => {
-    const random = new SeededRandom(19);
-    const state = createFinishedState();
-    state.turn.rolledValue = 6;
+  it.each([3, 4] as const)(
+    'round-trips finished %i-player games with the final GameState untouched',
+    async (playerCount) => {
+      const random = new SeededRandom(19);
+      const state = createFinishedState(playerCount);
+      state.turn.rolledValue = 6;
 
-    await saveTechnicalSliceSave(state, random.getSnapshot(), 'finished');
-    const loaded = await loadTechnicalSliceSave();
+      await saveTechnicalSliceSave(state, random.getSnapshot(), 'finished');
+      const loaded = await loadTechnicalSliceSave();
 
-    expect(loaded.status).toBe('ready');
-    expect(loaded.save?.flow).toBe('finished');
-    expect(loaded.save?.handoffFromPlayerId).toBeNull();
-    expect(loaded.save?.game).toEqual(state);
-    expect(loaded.save?.game.winnerId).toBe('P1');
-  });
+      expect(loaded.status).toBe('ready');
+      expect(loaded.save?.flow).toBe('finished');
+      expect(loaded.save?.handoffFromPlayerId).toBeNull();
+      expect(loaded.save?.game).toEqual(state);
+      expect(loaded.save?.game.players).toHaveLength(playerCount);
+      expect(loaded.save?.game.winnerId).toBe('P1');
+    }
+  );
+
+  it.each([0, 1, 5, 6])(
+    'quarantines v3 saves with an out-of-range player count of %i without truncating them',
+    async (playerCount) => {
+      const valid = await saveTechnicalSliceSave(
+        createTechnicalSliceState(4),
+        new SeededRandom(20260820).getSnapshot(),
+        'turnReady'
+      );
+      const canonicalPlayers = valid.game.players;
+      valid.game.players = Array.from(
+        { length: playerCount },
+        (_, index) =>
+          index < canonicalPlayers.length
+            ? structuredClone(canonicalPlayers[index]!)
+            : {
+                ...structuredClone(canonicalPlayers[canonicalPlayers.length - 1]!),
+                id: `INVALID-P${index + 1}`
+              }
+      );
+      await saveSnapshot(TECHNICAL_SLICE_SAVE_SLOT, recomputeIntegrity(valid));
+
+      const quarantine = await expectRecoveredAndQuarantined();
+      expect(
+        (quarantine as { payload: { game: { players: unknown[] } } }).payload.game.players
+      ).toHaveLength(playerCount);
+    }
+  );
 
   it.each([
     ['missing liquidation interaction', (save: TechnicalSliceSave) => {
@@ -273,6 +318,7 @@ describe('technical slice persistence', () => {
       handoffFromPlayerId: null,
       game: { status: 'IN_PROGRESS', winnerId: null }
     });
+    expect(migratedTurnReady.save?.game.players).toHaveLength(2);
 
     const handoffState = createTechnicalSliceState();
     handoffState.activePlayerIndex = 1;
@@ -289,6 +335,7 @@ describe('technical slice persistence', () => {
       handoffFromPlayerId: 'P1',
       game: { status: 'IN_PROGRESS', winnerId: null }
     });
+    expect(migratedHandoff.save?.game.players).toHaveLength(2);
   });
 
   it('quarantines invalid v2 before migration and unknown schemas', async () => {
@@ -337,8 +384,8 @@ describe('technical slice persistence', () => {
   );
 });
 
-function createAwaitingLiquidationState(): GameState {
-  const state = createTechnicalSliceState();
+function createAwaitingLiquidationState(playerCount: 2 | 3 | 4 = 2): GameState {
+  const state = createTechnicalSliceState(playerCount);
   state.activePlayerIndex = 1;
   state.players[1]!.position = 0;
   state.players[1]!.cash = 10;
@@ -363,9 +410,9 @@ function createAwaitingLiquidationState(): GameState {
   ).nextState;
 }
 
-function createFinishedState(): GameState {
-  const state = createTechnicalSliceState();
-  state.players[1]!.bankrupt = true;
+function createFinishedState(playerCount: 2 | 3 | 4 = 2): GameState {
+  const state = createTechnicalSliceState(playerCount);
+  for (const player of state.players.slice(1)) player.bankrupt = true;
   state.status = 'FINISHED';
   state.winnerId = 'P1';
   return state;
@@ -418,11 +465,14 @@ function recomputeIntegrity<T extends { integrity: string }>(save: T): T {
   return { ...payload, integrity: createIntegrity(payload) } as T;
 }
 
-async function expectRecoveredAndQuarantined(): Promise<void> {
+async function expectRecoveredAndQuarantined(): Promise<unknown> {
   const loaded = await loadTechnicalSliceSave();
   expect(loaded.status).toBe('recovered');
+  expect(loaded.save).toBeNull();
   expect(await loadSnapshot(TECHNICAL_SLICE_SAVE_SLOT)).toBeNull();
-  expect(await loadSnapshot(TECHNICAL_SLICE_QUARANTINE_SLOT)).not.toBeNull();
+  const quarantine = await loadSnapshot(TECHNICAL_SLICE_QUARANTINE_SLOT);
+  expect(quarantine).not.toBeNull();
+  return quarantine;
 }
 
 function createIntegrity(payload: unknown): string {

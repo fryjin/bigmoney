@@ -51,6 +51,10 @@ class SceneEventBus {
       if (listener.once) this.off(event, listener.handler, listener.context);
     }
   }
+
+  clear(): void {
+    this.listeners.clear();
+  }
 }
 
 const emitter = new SceneEventBus();
@@ -76,6 +80,11 @@ export function notifySceneReady(): void {
 export function notifySceneShutdown(): void {
   ready = false;
   emitter.emit(SceneBridgeEvents.shutdown);
+}
+
+export function resetSceneBridge(): void {
+  ready = false;
+  emitter.clear();
 }
 
 export function notifySceneLoadProgress(progress: number): void {

@@ -579,7 +579,11 @@ function validateGameStateStructure(
     return '获胜者无效。';
   }
   if (!isPositiveInteger(value.round)) return '大轮编号无效。';
-  if (!Array.isArray(value.players) || value.players.length < 2) {
+  if (
+    !Array.isArray(value.players) ||
+    value.players.length < 2 ||
+    value.players.length > 4
+  ) {
     return '玩家列表无效。';
   }
   if (!isInteger(value.activePlayerIndex)) return '当前玩家索引无效。';

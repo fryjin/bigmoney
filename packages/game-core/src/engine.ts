@@ -13,24 +13,44 @@ import {
   getUpgradeCost,
   roundMoney
 } from './money';
+import {
+  DEFAULT_LOCAL_ROSTER
+} from './model';
 import type {
   CardInstance,
   CommandResult,
+  DefaultLocalPlayer,
   DomainEvent,
   ForcedPayment,
   GameCommand,
   GameState,
   LiquidationCandidate,
   LiquidationQuote,
+  LocalPlayerCount,
   PlayerId,
   PlayerState,
   PropertyState,
   StockHolding
 } from './model';
 
+export function createTechnicalSliceState(): GameState;
+export function createTechnicalSliceState(playerCount: LocalPlayerCount): GameState;
+export function createTechnicalSliceState(content: TechnicalSliceContent): GameState;
 export function createTechnicalSliceState(
-  content: TechnicalSliceContent = technicalSliceContent
+  content: TechnicalSliceContent,
+  playerCount: LocalPlayerCount
+): GameState;
+export function createTechnicalSliceState(
+  contentOrPlayerCount: TechnicalSliceContent | LocalPlayerCount = technicalSliceContent,
+  requestedPlayerCount: LocalPlayerCount = 2
 ): GameState {
+  const content = typeof contentOrPlayerCount === 'number'
+    ? technicalSliceContent
+    : contentOrPlayerCount;
+  const playerCount = typeof contentOrPlayerCount === 'number'
+    ? contentOrPlayerCount
+    : requestedPlayerCount;
+  assertLocalPlayerCount(playerCount);
   const properties = Object.fromEntries(
     content.properties.map((property): [string, PropertyState] => [
       property.id,
@@ -49,10 +69,9 @@ export function createTechnicalSliceState(
     winnerId: null,
     round: 1,
     activePlayerIndex: 0,
-    players: [
-      createPlayer('P1', '玩家一', '#E87868', content.startingCash),
-      createPlayer('P2', '玩家二', '#4F8FB8', content.startingCash)
-    ],
+    players: DEFAULT_LOCAL_ROSTER
+      .slice(0, playerCount)
+      .map((player) => createPlayer(player, content.startingCash)),
     properties,
     turn: createEmptyTurn(),
     pendingInteraction: null,
@@ -107,16 +126,17 @@ export function executeCommand(
   }
 }
 
-function createPlayer(
-  id: PlayerId,
-  name: string,
-  color: string,
-  cash: number
-): PlayerState {
+function assertLocalPlayerCount(value: number): asserts value is LocalPlayerCount {
+  if (value !== 2 && value !== 3 && value !== 4) {
+    throw new Error('Local player count must be 2, 3, or 4.');
+  }
+}
+
+function createPlayer(player: DefaultLocalPlayer, cash: number): PlayerState {
   return {
-    id,
-    name,
-    color,
+    id: player.id,
+    name: player.name,
+    color: player.color,
     cash,
     position: 0,
     bankrupt: false,
@@ -924,15 +944,16 @@ function applyEvent(
     return [{ playerId: activePlayerId, amount }];
   }
 
-  const otherPlayer = state.players.find(
-    (player) => player.id !== activePlayerId && !player.bankrupt
-  );
-  if (!otherPlayer) return [];
-  const transferable = Math.min(amount, otherPlayer.cash);
-  otherPlayer.cash -= transferable;
+  const activePlayerIndex = state.players.findIndex((player) => player.id === activePlayerId);
+  const payerIndex = getNextActivePlayerIndex(state, activePlayerIndex);
+  if (payerIndex === null || payerIndex === activePlayerIndex) return [];
+  const payer = state.players[payerIndex];
+  if (!payer) return [];
+  const transferable = Math.min(amount, payer.cash);
+  payer.cash -= transferable;
   activePlayer.cash += transferable;
   return [
-    { playerId: otherPlayer.id, amount: -transferable },
+    { playerId: payer.id, amount: -transferable },
     { playerId: activePlayerId, amount: transferable }
   ];
 }
