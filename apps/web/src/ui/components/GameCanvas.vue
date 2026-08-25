@@ -16,6 +16,7 @@ import {
   onSceneLoadError,
   onSceneLoadProgress,
   onSceneReady,
+  resetSceneBridge,
   onSceneShutdown,
   syncSceneState,
   updateScenePresentationPreferences
@@ -131,6 +132,7 @@ onBeforeUnmount(() => {
     'controllerchange',
     refreshRuntimeHealth
   );
+  resetSceneBridge();
   game?.destroy(true);
   game = null;
 });
