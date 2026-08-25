@@ -26,19 +26,20 @@ import {
   PROPERTY_VISUALS,
   TECHNICAL_SLICE_NODES
 } from '../maps/technicalSliceLayout';
-
-const PLAYER_TEXTURES: Record<string, VisualAssetId> = {
-  P1: 'pawn-cat',
-  P2: 'pawn-bear'
-};
-
-const PLAYER_OFFSETS: Record<string, { x: number; y: number }> = {
-  P1: { x: -14, y: 0 },
-  P2: { x: 16, y: 5 }
-};
+import {
+  getPawnDisplayDepth,
+  getPawnDisplayPosition,
+  getPawnTexture,
+  shouldShowActivePlayerRing,
+  toPhaserDisplayColor
+} from '../presentation/playerPresentation';
 
 export class TownScene extends Phaser.Scene {
   private readonly pawns = new Map<PlayerId, Phaser.GameObjects.Image>();
+  private readonly pawnSlots = new Map<
+    PlayerId,
+    { playerIndex: number; playerCount: number }
+  >();
   private readonly tileShapes = new Map<string, Phaser.GameObjects.Polygon>();
   private readonly propertyBuildings = new Map<string, Phaser.GameObjects.Image>();
   private readonly propertyBadges = new Map<string, Phaser.GameObjects.Text>();
@@ -62,7 +63,6 @@ export class TownScene extends Phaser.Scene {
     this.drawTiles();
     this.placeBuildings();
     this.placeCityDetails();
-    this.createPawns();
     this.createActivePlayerRing();
     this.createDice();
     this.applyPresentationPreferences(this.preferences);
@@ -318,17 +318,39 @@ export class TownScene extends Phaser.Scene {
     light.setDepth(y);
   }
 
-  private createPawns(): void {
-    const start = TECHNICAL_SLICE_NODES[0]!;
-    for (const playerId of ['P1', 'P2']) {
-      const offset = PLAYER_OFFSETS[playerId]!;
-      const pawn = this.createVisualAssetImage(
-        PLAYER_TEXTURES[playerId]!,
-        start.x + offset.x,
-        start.y + offset.y
-      );
-      this.pawns.set(playerId, pawn);
+  private ensurePlayerPawns(players: GameState['players']): void {
+    const playerIds = new Set(players.map((player) => player.id));
+    for (const [playerId, pawn] of this.pawns) {
+      if (playerIds.has(playerId)) continue;
+      this.tweens.killTweensOf(pawn);
+      pawn.destroy();
+      this.pawns.delete(playerId);
+      this.pawnSlots.delete(playerId);
     }
+
+    players.forEach((player, playerIndex) => {
+      const texture = getPawnTexture(playerIndex);
+      const existing = this.pawns.get(player.id);
+      const pawn = existing ?? this.createVisualAssetImage(texture, 0, 0);
+      if (!existing) this.pawns.set(player.id, pawn);
+
+      const asset = getVisualAsset(texture);
+      pawn
+        .setTexture(asset.key)
+        .setOrigin(asset.origin.x, asset.origin.y)
+        .setDisplaySize(asset.displaySize.width, asset.displaySize.height)
+        .setAlpha(player.bankrupt ? 0.38 : 1);
+
+      pawn.setData('displayColor', toPhaserDisplayColor(player.color));
+
+      if (playerIndex < 2) pawn.clearTint();
+      else pawn.setTint(toPhaserDisplayColor(player.color));
+
+      this.pawnSlots.set(player.id, {
+        playerIndex,
+        playerCount: players.length
+      });
+    });
   }
 
   private createActivePlayerRing(): void {
@@ -343,7 +365,8 @@ export class TownScene extends Phaser.Scene {
     );
     this.activePlayerRing
       .setStrokeStyle(4, 0xe87868, 0.92)
-      .setDepth(start.y + 39);
+      .setDepth(start.y + 39)
+      .setVisible(false);
   }
 
   private createVisualAssetImage(
@@ -462,11 +485,17 @@ export class TownScene extends Phaser.Scene {
     const target = TECHNICAL_SLICE_NODES[event.to];
     if (!pawn || !target) return;
 
-    const offset = PLAYER_OFFSETS[event.playerId] ?? { x: 0, y: 0 };
+    const slot = this.pawnSlots.get(event.playerId);
+    if (!slot) return;
     const startX = pawn.x;
     const startY = pawn.y;
-    const endX = target.x + offset.x;
-    const endY = target.y + offset.y;
+    const destination = getPawnDisplayPosition(
+      target,
+      slot.playerIndex,
+      slot.playerCount
+    );
+    const endX = destination.x;
+    const endY = destination.y;
     const proxy = { t: 0 };
 
     await this.tween({
@@ -477,11 +506,13 @@ export class TownScene extends Phaser.Scene {
       onUpdate: () => {
         pawn.x = Phaser.Math.Linear(startX, endX, proxy.t);
         pawn.y = Phaser.Math.Linear(startY, endY, proxy.t) - Math.sin(proxy.t * Math.PI) * 30;
-        pawn.setDepth(pawn.y + 44);
+        pawn.setDepth(getPawnDisplayDepth(pawn.y, slot.playerIndex));
       }
     });
 
-    pawn.setPosition(endX, endY).setDepth(endY + 44);
+    pawn
+      .setPosition(endX, endY)
+      .setDepth(getPawnDisplayDepth(endY, slot.playerIndex));
     await this.pulseTile(target.tileId);
   }
 
@@ -505,9 +536,17 @@ export class TownScene extends Phaser.Scene {
       return;
     }
 
-    this.ensurePropertyFlag(purchase.propertyId, purchase.playerId);
+    const pawn = this.pawns.get(purchase.playerId);
+    const displayColor = pawn?.getData('displayColor');
+    if (typeof displayColor === 'number') {
+      this.ensurePropertyFlag(purchase.propertyId, displayColor);
+    }
+
     const flag = this.propertyFlags.get(purchase.propertyId);
-    if (!flag) return;
+    if (!flag) {
+      await this.delay(150);
+      return;
+    }
     flag.setScale(0.2).setAlpha(0);
     await this.tween({
       targets: flag,
@@ -597,48 +636,64 @@ export class TownScene extends Phaser.Scene {
   }
 
   private syncState(state: GameState): void {
-    for (const player of state.players) {
+    this.ensurePlayerPawns(state.players);
+
+    state.players.forEach((player, playerIndex) => {
       const pawn = this.pawns.get(player.id);
       const node = TECHNICAL_SLICE_NODES[player.position];
-      if (!pawn || !node) continue;
-      const offset = PLAYER_OFFSETS[player.id] ?? { x: 0, y: 0 };
-      pawn.setPosition(node.x + offset.x, node.y + offset.y);
-      pawn.setDepth(node.y + offset.y + 44);
-    }
+      if (!pawn || !node) return;
+      const position = getPawnDisplayPosition(
+        node,
+        playerIndex,
+        state.players.length
+      );
+      pawn.setPosition(position.x, position.y);
+      pawn.setDepth(getPawnDisplayDepth(position.y, playerIndex));
+    });
 
-    const activePlayer = state.players[state.activePlayerIndex];
-    if (activePlayer) this.updateActivePlayerRing(activePlayer);
+    this.updateActivePlayerRing(state);
 
     for (const [propertyId, property] of Object.entries(state.properties)) {
       const badge = this.propertyBadges.get(propertyId);
       badge?.setText(`L${property.level}`);
-      if (property.ownerId) {
-        this.ensurePropertyFlag(propertyId, property.ownerId);
-      } else {
+      const owner = property.ownerId
+        ? state.players.find((player) => player.id === property.ownerId)
+        : undefined;
+      if (!owner) {
         this.propertyFlags.get(propertyId)?.destroy();
         this.propertyFlags.delete(propertyId);
+        continue;
       }
+      this.ensurePropertyFlag(propertyId, toPhaserDisplayColor(owner.color));
     }
   }
 
-  private updateActivePlayerRing(player: GameState['players'][number]): void {
-    const pawn = this.pawns.get(player.id);
-    if (!pawn || !this.activePlayerRing) return;
+  private updateActivePlayerRing(state: GameState): void {
+    if (!this.activePlayerRing) return;
+    const player = state.players[state.activePlayerIndex];
+    if (!shouldShowActivePlayerRing(state.status, player)) {
+      this.activePlayerRing.setVisible(false);
+      return;
+    }
 
-    const parsedColor = Number.parseInt(player.color.replace('#', ''), 16);
-    const color = Number.isFinite(parsedColor) ? parsedColor : 0x4a9a7f;
+    const pawn = this.pawns.get(player.id);
+    if (!pawn) {
+      this.activePlayerRing.setVisible(false);
+      return;
+    }
+
     this.activePlayerRing
       .setPosition(pawn.x, pawn.y + 13)
-      .setDepth(pawn.depth - 1)
-      .setStrokeStyle(4, color, 0.92)
+      .setDepth(pawn.depth - 0.1)
+      .setStrokeStyle(4, toPhaserDisplayColor(player.color), 0.92)
       .setVisible(true);
   }
 
-  private ensurePropertyFlag(propertyId: string, ownerId: PlayerId): void {
+  private ensurePropertyFlag(propertyId: string, ownerColor: number): void {
     const existing = this.propertyFlags.get(propertyId);
     if (existing) {
       const cloth = existing.getAt(1) as Phaser.GameObjects.Rectangle | undefined;
-      cloth?.setFillStyle(ownerId === 'P1' ? 0xe87868 : 0x4f8fb8);
+      cloth?.setFillStyle(ownerColor);
       return;
     }
 
@@ -646,7 +701,7 @@ export class TownScene extends Phaser.Scene {
     if (!visual) return;
 
     const pole = this.add.rectangle(0, -28, 4, 56, 0x2f454c);
-    const cloth = this.add.rectangle(15, -46, 28, 18, ownerId === 'P1' ? 0xe87868 : 0x4f8fb8);
+    const cloth = this.add.rectangle(15, -46, 28, 18, ownerColor);
     const flag = this.add.container(visual.x + 62, visual.y - 8, [pole, cloth]);
     flag.setDepth(visual.y + 50);
     this.propertyFlags.set(propertyId, flag);
