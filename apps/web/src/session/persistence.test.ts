@@ -1,10 +1,12 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
+  createLocalGameState,
   createTechnicalSliceState,
   executeCommand,
   type GameState,
   type PendingInteraction
 } from '@bigmoney/game-core';
+import { fullMap36Content } from '@bigmoney/game-content';
 import { SeededRandom, SequenceRandom, type RandomSnapshot } from '@bigmoney/game-random';
 import {
   deleteSnapshot,
@@ -12,17 +14,24 @@ import {
   saveSnapshot
 } from '@bigmoney/game-storage';
 import {
+  CURRENT_LOCAL_GAME_SAVE_SCHEMA_VERSION,
   CURRENT_SAVE_SCHEMA_VERSION,
+  LOCAL_GAME_QUARANTINE_SLOT,
+  LOCAL_GAME_SAVE_SLOT,
   TECHNICAL_SLICE_QUARANTINE_SLOT,
   TECHNICAL_SLICE_SAVE_SLOT,
+  clearLocalGameSave,
   clearTechnicalSliceSave,
+  loadLocalGameSave,
   loadTechnicalSliceSave,
+  saveLocalGameSave,
   saveTechnicalSliceSave,
+  type LocalGameSave,
   type TechnicalSliceSave
 } from './persistence';
 
 beforeEach(async () => {
-  await clearTechnicalSliceSave();
+  await Promise.all([clearTechnicalSliceSave(), clearLocalGameSave()]);
 });
 
 describe('technical slice persistence', () => {
@@ -384,6 +393,290 @@ describe('technical slice persistence', () => {
   );
 });
 
+describe('local game persistence schema v4', () => {
+  it.each([2, 3, 4] as const)(
+    'round-trips a full-map %i-player turn-ready save with its canonical roster and random snapshot',
+    async (playerCount) => {
+      const state = createFullMapState(playerCount);
+      state.technicalSliceVersion = 'legacy-marker-is-not-board-identity';
+      const random = new SeededRandom(20260826 + playerCount);
+      const written = await saveLocalGameSave(
+        fullMap36Content,
+        state,
+        random.getSnapshot(),
+        'turnReady'
+      );
+      const loaded = await loadLocalGameSave(fullMap36Content);
+
+      expect(written.schemaVersion).toBe(CURRENT_LOCAL_GAME_SAVE_SCHEMA_VERSION);
+      expect(written.game.boardVersion).toBe(fullMap36Content.boardVersion);
+      expect(written.integrity).toMatch(/^fnv1a32:/);
+      expect(loaded.status).toBe('ready');
+      expect(loaded.save?.game).toEqual(state);
+      expect(loaded.save?.random).toEqual(random.getSnapshot());
+      expect(loaded.save?.game.players).toHaveLength(playerCount);
+      expect(Object.keys(loaded.save?.game.properties ?? {})).toEqual(
+        fullMap36Content.properties.map((property) => property.id)
+      );
+      expect(loaded.save?.game.properties.HARBOR_01).toEqual({
+        id: 'HARBOR_01',
+        ownerId: 'P1',
+        level: 3
+      });
+      expect(loaded.save?.game.players[0]?.position).toBe(0);
+      expect(loaded.save?.game.players[1]?.position).toBe(35);
+      expect(loaded.save?.game.players.at(-1)?.position).toBe(
+        [0, 35, 17, 34][playerCount - 1]
+      );
+      expect(loaded.save?.game.players[0]?.cards).toEqual([
+        { instanceId: 'CARD-0001', cardId: 'CARD_REROLL' }
+      ]);
+      expect(loaded.save?.game.players[1]?.stocks).toEqual([
+        {
+          holdingId: 'STOCK-0001',
+          stockId: 'SKYLINE_TECH',
+          principal: 50,
+          originalPeriod: 2,
+          remainingRounds: 1,
+          purchasedRound: 1
+        }
+      ]);
+    }
+  );
+
+  it('round-trips every other stable flow state without changing its canonical game', async () => {
+    const handoff = createFullMapState(3);
+    handoff.activePlayerIndex = 1;
+    const liquidation = createFullMapLiquidationState();
+    const finished = createFullMapFinishedState(4);
+
+    await saveLocalGameSave(
+      fullMap36Content,
+      handoff,
+      new SeededRandom(41).getSnapshot(),
+      'awaitingHandoff',
+      'P1'
+    );
+    let loaded = await loadLocalGameSave(fullMap36Content);
+    expect(loaded).toMatchObject({ status: 'ready', save: { flow: 'awaitingHandoff', handoffFromPlayerId: 'P1' } });
+    expect(loaded.save?.game).toEqual(handoff);
+
+    await clearLocalGameSave();
+    await saveLocalGameSave(
+      fullMap36Content,
+      liquidation,
+      new SeededRandom(43).getSnapshot(),
+      'awaitingLiquidation'
+    );
+    loaded = await loadLocalGameSave(fullMap36Content);
+    expect(loaded).toMatchObject({ status: 'ready', save: { flow: 'awaitingLiquidation', handoffFromPlayerId: null } });
+    expect(loaded.save?.game).toEqual(liquidation);
+
+    await clearLocalGameSave();
+    await saveLocalGameSave(
+      fullMap36Content,
+      finished,
+      new SeededRandom(47).getSnapshot(),
+      'finished'
+    );
+    loaded = await loadLocalGameSave(fullMap36Content);
+    expect(loaded).toMatchObject({ status: 'ready', save: { flow: 'finished', handoffFromPlayerId: null } });
+    expect(loaded.save?.game).toEqual(finished);
+  });
+
+  it('returns empty when neither the v4 nor legacy slot exists', async () => {
+    await expect(loadLocalGameSave(fullMap36Content)).resolves.toEqual({
+      status: 'empty',
+      save: null,
+      message: null,
+      migrated: false
+    });
+  });
+
+  it('clears only local v4 snapshots and leaves the technical-slice slot untouched', async () => {
+    await saveLocalGameSave(
+      fullMap36Content,
+      createFullMapState(),
+      new SeededRandom(53).getSnapshot(),
+      'turnReady'
+    );
+    await saveTechnicalSliceSave(
+      createTechnicalSliceState(),
+      new SeededRandom(59).getSnapshot(),
+      'turnReady'
+    );
+
+    await clearLocalGameSave();
+
+    expect(await loadSnapshot(LOCAL_GAME_SAVE_SLOT)).toBeNull();
+    expect(await loadSnapshot(LOCAL_GAME_QUARANTINE_SLOT)).toBeNull();
+    expect(await loadSnapshot(TECHNICAL_SLICE_SAVE_SLOT)).not.toBeNull();
+  });
+
+  it.each([
+    ['wrong board version', (save: LocalGameSave) => { save.game.boardVersion = 'technical-slice-phase-1.1'; }],
+    ['missing canonical property', (save: LocalGameSave) => { delete save.game.properties.HARBOR_01; }],
+    ['extra legacy property', (save: LocalGameSave) => {
+      save.game.properties.A1 = { id: 'A1', ownerId: null, level: 0 };
+    }],
+    ['property key and id mismatch', (save: LocalGameSave) => { save.game.properties.HARBOR_01!.id = 'HARBOR_02'; }],
+    ['invalid property owner', (save: LocalGameSave) => { save.game.properties.HARBOR_01!.ownerId = 'P9'; }],
+    ['invalid property level', (save: LocalGameSave) => { save.game.properties.HARBOR_01!.level = 4 as 0; }],
+    ['negative player position', (save: LocalGameSave) => { save.game.players[0]!.position = -1; }],
+    ['out-of-range player position', (save: LocalGameSave) => { save.game.players[0]!.position = 36; }],
+    ['non-integer player position', (save: LocalGameSave) => { save.game.players[0]!.position = 1.5; }],
+    ['unknown player stock', (save: LocalGameSave) => { save.game.players[1]!.stocks[0]!.stockId = 'UNKNOWN_STOCK'; }],
+    ['unknown player card', (save: LocalGameSave) => { save.game.players[0]!.cards[0]!.cardId = 'UNKNOWN_CARD'; }],
+    ['unknown triggered stock market', (save: LocalGameSave) => { save.game.turn.triggeredStockMarkets = ['UNKNOWN_MARKET']; }]
+  ])('quarantines structurally invalid v4 saves with %s', async (_name, mutate) => {
+    const invalid = recomputeIntegrityV4(await createLocalTurnReadySave());
+    mutate(invalid);
+    await saveSnapshot(LOCAL_GAME_SAVE_SLOT, recomputeIntegrityV4(invalid));
+
+    await expectLocalRecoveredAndQuarantined();
+  });
+
+  it.each([
+    ['unknown rent property', (save: LocalGameSave) => {
+      requireLiquidation(save.game).payment = {
+        ...requireLiquidation(save.game).payment,
+        propertyId: 'A1'
+      } as Extract<PendingInteraction, { type: 'LIQUIDATION' }>['payment'];
+    }],
+    ['unknown expense event', (save: LocalGameSave) => {
+      requireLiquidation(save.game).payment = {
+        id: 'PAYMENT-0002',
+        payerId: 'P2',
+        receiverId: null,
+        amount: 30,
+        reason: 'EVENT_EXPENSE',
+        eventId: 'UNKNOWN_EVENT',
+        title: 'fee',
+        description: 'fee'
+      };
+    }]
+  ])('quarantines liquidation references with %s', async (_name, mutate) => {
+    const invalid = recomputeIntegrityV4(await createLocalLiquidationSave());
+    mutate(invalid);
+    await saveSnapshot(LOCAL_GAME_SAVE_SLOT, recomputeIntegrityV4(invalid));
+
+    await expectLocalRecoveredAndQuarantined();
+  });
+
+  it.each([
+    ['unknown stock tile', 'tileId', 'UNKNOWN_TILE'],
+    ['unknown stock market', 'marketId', 'UNKNOWN_MARKET'],
+    ['unknown stock offer', 'offeredStockIds', ['UNKNOWN_STOCK']]
+  ] as const)(
+    'rejects a saved stock interaction with %s before stable-flow recovery',
+    async (_name, field, value) => {
+      const invalid = recomputeIntegrityV4(await createLocalTurnReadySave());
+      invalid.game.pendingInteraction = {
+        type: 'STOCK_MARKET',
+        playerId: 'P1',
+        tileId: 'STOCK_01',
+        marketId: 'MARKET_01',
+        offeredStockIds: ['SKYLINE_TECH']
+      };
+      Object.assign(invalid.game.pendingInteraction, { [field]: value });
+      await saveSnapshot(LOCAL_GAME_SAVE_SLOT, recomputeIntegrityV4(invalid));
+
+      const quarantine = await expectLocalRecoveredAndQuarantined();
+      expect((quarantine as { reason: string }).reason).toContain('股票');
+    }
+  );
+
+  it.each([
+    ['cash', (save: LocalGameSave) => { save.game.players[0]!.cash += 1; }],
+    ['board version', (save: LocalGameSave) => { save.game.boardVersion = 'other-board'; }],
+    ['player position', (save: LocalGameSave) => { save.game.players[0]!.position = 1; }],
+    ['property owner', (save: LocalGameSave) => { save.game.properties.HARBOR_01!.ownerId = 'P2'; }],
+    ['random snapshot', (save: LocalGameSave) => { save.random.state += 1; }],
+    ['flow', (save: LocalGameSave) => { save.flow = 'awaitingHandoff'; save.handoffFromPlayerId = 'P1'; }]
+  ])('rejects v4 integrity after changing %s', async (_name, mutate) => {
+    const invalid = await createLocalTurnReadySave();
+    mutate(invalid);
+    await saveSnapshot(LOCAL_GAME_SAVE_SLOT, invalid);
+
+    const quarantine = await expectLocalRecoveredAndQuarantined();
+    expect((quarantine as { reason: string }).reason).toContain('完整性');
+  });
+
+  it.each([
+    ['v1', async () => {
+      const state = createTechnicalSliceState();
+      await saveSnapshot(TECHNICAL_SLICE_SAVE_SLOT, {
+        schemaVersion: 1,
+        game: createLegacyGame(state),
+        random: new SeededRandom(61).getSnapshot(),
+        savedAt: '2026-08-26T00:00:00.000Z'
+      });
+    }],
+    ['v2', async () => {
+      await saveSnapshot(
+        TECHNICAL_SLICE_SAVE_SLOT,
+        createV2Save(
+          createTechnicalSliceState(),
+          new SeededRandom(67).getSnapshot(),
+          'turnReady',
+          null
+        )
+      );
+    }],
+    ['v3', async () => {
+      await saveTechnicalSliceSave(
+        createTechnicalSliceState(),
+        new SeededRandom(71).getSnapshot(),
+        'turnReady'
+      );
+    }]
+  ])('quarantines an incompatible technical-slice %s save without migration', async (_version, writeLegacy) => {
+    await writeLegacy();
+
+    const loaded = await loadLocalGameSave(fullMap36Content);
+    const quarantine = await loadSnapshot(LOCAL_GAME_QUARANTINE_SLOT);
+
+    expect(loaded).toMatchObject({ status: 'recovered', save: null, migrated: false });
+    expect(loaded.message).toContain('地图版本已升级');
+    expect(loaded.message).toContain('旧局无法继续');
+    expect(await loadSnapshot(LOCAL_GAME_SAVE_SLOT)).toBeNull();
+    expect(await loadSnapshot(TECHNICAL_SLICE_SAVE_SLOT)).toBeNull();
+    expect(quarantine).toMatchObject({
+      sourceSlot: TECHNICAL_SLICE_SAVE_SLOT,
+      payload: expect.anything()
+    });
+  });
+
+  it('prefers a valid v4 save and leaves a stale legacy save untouched', async () => {
+    const v4 = await createLocalTurnReadySave();
+    await saveTechnicalSliceSave(
+      createTechnicalSliceState(),
+      new SeededRandom(73).getSnapshot(),
+      'turnReady'
+    );
+
+    const loaded = await loadLocalGameSave(fullMap36Content);
+
+    expect(loaded.status).toBe('ready');
+    expect(loaded.save).toEqual(v4);
+    expect(await loadSnapshot(TECHNICAL_SLICE_SAVE_SLOT)).not.toBeNull();
+  });
+
+  it('recovers an invalid v4 save without falling back to a legacy save', async () => {
+    const invalid = await createLocalTurnReadySave();
+    invalid.game.players[0]!.cash += 1;
+    await saveSnapshot(LOCAL_GAME_SAVE_SLOT, invalid);
+    await saveTechnicalSliceSave(
+      createTechnicalSliceState(),
+      new SeededRandom(79).getSnapshot(),
+      'turnReady'
+    );
+
+    await expectLocalRecoveredAndQuarantined();
+    expect(await loadSnapshot(TECHNICAL_SLICE_SAVE_SLOT)).not.toBeNull();
+  });
+});
+
 function createAwaitingLiquidationState(playerCount: 2 | 3 | 4 = 2): GameState {
   const state = createTechnicalSliceState(playerCount);
   state.activePlayerIndex = 1;
@@ -416,6 +709,85 @@ function createFinishedState(playerCount: 2 | 3 | 4 = 2): GameState {
   state.status = 'FINISHED';
   state.winnerId = 'P1';
   return state;
+}
+
+function createFullMapState(playerCount: 2 | 3 | 4 = 2): GameState {
+  const state = createLocalGameState(fullMap36Content, playerCount);
+  const positions = [0, 35, 17, 34];
+
+  state.players.forEach((player, index) => {
+    player.position = positions[index]!;
+  });
+  state.properties.HARBOR_01 = { id: 'HARBOR_01', ownerId: 'P1', level: 3 };
+  state.properties.METRO_02 = { id: 'METRO_02', ownerId: 'P2', level: 1 };
+  state.players[0]!.cards = [{ instanceId: 'CARD-0001', cardId: 'CARD_REROLL' }];
+  state.players[1]!.stocks = [
+    {
+      holdingId: 'STOCK-0001',
+      stockId: 'SKYLINE_TECH',
+      principal: 50,
+      originalPeriod: 2,
+      remainingRounds: 1,
+      purchasedRound: 1
+    }
+  ];
+
+  return state;
+}
+
+function createFullMapLiquidationState(): GameState {
+  const state = createLocalGameState(fullMap36Content, 2);
+  state.activePlayerIndex = 1;
+  state.players[1]!.position = 0;
+  state.players[1]!.cash = 10;
+  state.properties.HARBOR_01 = { id: 'HARBOR_01', ownerId: 'P1', level: 3 };
+  state.properties.HARBOR_02 = { id: 'HARBOR_02', ownerId: 'P2', level: 0 };
+  const random = new SequenceRandom([1]);
+  const rolled = executeCommand(
+    state,
+    { type: 'ROLL_DICE', playerId: 'P2' },
+    random,
+    fullMap36Content
+  ).nextState;
+  const moved = executeCommand(
+    rolled,
+    { type: 'MOVE_ONE_STEP', playerId: 'P2' },
+    random,
+    fullMap36Content
+  ).nextState;
+
+  return executeCommand(
+    moved,
+    { type: 'RESOLVE_DESTINATION', playerId: 'P2' },
+    random,
+    fullMap36Content
+  ).nextState;
+}
+
+function createFullMapFinishedState(playerCount: 2 | 3 | 4 = 2): GameState {
+  const state = createLocalGameState(fullMap36Content, playerCount);
+  for (const player of state.players.slice(1)) player.bankrupt = true;
+  state.status = 'FINISHED';
+  state.winnerId = 'P1';
+  return state;
+}
+
+async function createLocalTurnReadySave(): Promise<LocalGameSave> {
+  return saveLocalGameSave(
+    fullMap36Content,
+    createFullMapState(),
+    new SeededRandom(83).getSnapshot(),
+    'turnReady'
+  );
+}
+
+async function createLocalLiquidationSave(): Promise<LocalGameSave> {
+  return saveLocalGameSave(
+    fullMap36Content,
+    createFullMapLiquidationState(),
+    new SeededRandom(89).getSnapshot(),
+    'awaitingLiquidation'
+  );
 }
 
 function createLegacyGame(state: GameState): Record<string, unknown> {
@@ -465,12 +837,26 @@ function recomputeIntegrity<T extends { integrity: string }>(save: T): T {
   return { ...payload, integrity: createIntegrity(payload) } as T;
 }
 
+function recomputeIntegrityV4(save: LocalGameSave): LocalGameSave {
+  return recomputeIntegrity(save);
+}
+
 async function expectRecoveredAndQuarantined(): Promise<unknown> {
   const loaded = await loadTechnicalSliceSave();
   expect(loaded.status).toBe('recovered');
   expect(loaded.save).toBeNull();
   expect(await loadSnapshot(TECHNICAL_SLICE_SAVE_SLOT)).toBeNull();
   const quarantine = await loadSnapshot(TECHNICAL_SLICE_QUARANTINE_SLOT);
+  expect(quarantine).not.toBeNull();
+  return quarantine;
+}
+
+async function expectLocalRecoveredAndQuarantined(): Promise<unknown> {
+  const loaded = await loadLocalGameSave(fullMap36Content);
+  expect(loaded.status).toBe('recovered');
+  expect(loaded.save).toBeNull();
+  expect(await loadSnapshot(LOCAL_GAME_SAVE_SLOT)).toBeNull();
+  const quarantine = await loadSnapshot(LOCAL_GAME_QUARANTINE_SLOT);
   expect(quarantine).not.toBeNull();
   return quarantine;
 }
