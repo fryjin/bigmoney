@@ -1,6 +1,6 @@
 # Big Money 本地 Codex 起点
 
-当前阶段为 **Phase 2.1：Full 2–4 Player Local Game**。改动会跨越 Game Core、XState Flow、Vue、Phaser、存档和浏览器测试；本地 Codex 负责实现与验证，产品规则、视觉方案和验收边界以项目文档为准。
+当前阶段为 **Phase 3.0：36-Tile Full Map & Content**。改动会分阶段覆盖内容、Core、存档、Phaser、Vue/Session 与浏览器回归；本地 Codex 负责实现与验证，产品规则、视觉方案和验收边界以项目文档为准。
 
 ## 1. 准备仓库
 
@@ -9,7 +9,7 @@
 ```bash
 git clone https://github.com/fryjin/bigmoney.git
 cd bigmoney
-npm install
+npm ci
 npm run codex:preflight
 npm run check
 ```
@@ -31,15 +31,15 @@ codex
 1. `AGENTS.md`
 2. `docs/rules-baseline.md`
 3. `CODEX_SKILLS_SETUP.md`
-4. `CODEX_TASK_PHASE_2_1.md`
+4. `CODEX_TASK_PHASE_3_0.md`
 5. `docs/design/ui-2.5d-visual-guidelines-v1.0.md`
 
 ## 3. 首次任务提示词
 
 ```text
-读取 AGENTS.md、docs/rules-baseline.md、CODEX_SKILLS_SETUP.md 和 CODEX_TASK_PHASE_2_1.md。
-先运行 npm run codex:preflight 与 npm run check，确认已合并的 Phase 2.0A 基线通过。
-然后只实施 Phase 2.1：在既有 8-node technical slice 中完成正式 2–4 名同设备本地玩家对局；不扩展监狱、合作项目、36格地图、正式美术、AI 或联网系统。
+读取 AGENTS.md、docs/rules-baseline.md、CODEX_SKILLS_SETUP.md 和 CODEX_TASK_PHASE_3_0.md。
+先运行 npm run codex:preflight 与 npm run check，确认已合并的 Phase 2.1 基线通过。
+然后只实施 Phase 3.0：按任务书的分阶段激活顺序，将既有 8-node technical slice 扩展为正式 36 格地图与内容；不得在 Step 5 Integration 之前切换 production default，也不得扩展监狱、设施、合作项目、小游戏、正式美术、AI 或联网系统。
 先输出实施计划和预计修改文件，再执行代码修改。
 完成后运行 npm run check，并汇报测试覆盖、未解决风险和 git diff 摘要。
 ```
