@@ -1,5 +1,6 @@
 import {
   technicalSliceContent,
+  type GameContent,
   type TechnicalSliceContent
 } from '@bigmoney/game-content';
 import {
@@ -33,6 +34,15 @@ import type {
   StockHolding
 } from './model';
 
+type PlayableContent = GameContent | TechnicalSliceContent;
+
+export function createLocalGameState(
+  content: GameContent,
+  playerCount: LocalPlayerCount = 2
+): GameState {
+  return createGameState(content, playerCount, content.boardVersion);
+}
+
 export function createTechnicalSliceState(): GameState;
 export function createTechnicalSliceState(playerCount: LocalPlayerCount): GameState;
 export function createTechnicalSliceState(content: TechnicalSliceContent): GameState;
@@ -50,6 +60,21 @@ export function createTechnicalSliceState(
   const playerCount = typeof contentOrPlayerCount === 'number'
     ? contentOrPlayerCount
     : requestedPlayerCount;
+
+  return createGameState(
+    content,
+    playerCount,
+    `technical-slice-${content.technicalSliceVersion}`,
+    content.technicalSliceVersion
+  );
+}
+
+function createGameState(
+  content: PlayableContent,
+  playerCount: LocalPlayerCount,
+  boardVersion: string,
+  technicalSliceVersion?: string
+): GameState {
   assertLocalPlayerCount(playerCount);
   const properties = Object.fromEntries(
     content.properties.map((property): [string, PropertyState] => [
@@ -64,7 +89,8 @@ export function createTechnicalSliceState(
 
   return {
     ruleVersion: content.ruleVersion,
-    technicalSliceVersion: content.technicalSliceVersion,
+    boardVersion,
+    ...(technicalSliceVersion === undefined ? {} : { technicalSliceVersion }),
     status: 'IN_PROGRESS',
     winnerId: null,
     round: 1,
@@ -83,7 +109,7 @@ export function executeCommand(
   state: GameState,
   command: GameCommand,
   random: RandomProvider,
-  content: TechnicalSliceContent = technicalSliceContent
+  content: PlayableContent = technicalSliceContent
 ): CommandResult {
   if (state.status === 'FINISHED') {
     throw new Error('游戏已经结束。');
@@ -181,7 +207,7 @@ export function getWinnerId(state: GameState): PlayerId | null {
 export function getLiquidationCandidates(
   state: GameState,
   playerId: PlayerId,
-  content: TechnicalSliceContent = technicalSliceContent
+  content: PlayableContent = technicalSliceContent
 ): LiquidationCandidate[] {
   return content.properties.flatMap((definition) => {
     const property = state.properties[definition.id];
@@ -198,7 +224,7 @@ export function quoteLiquidation(
   state: GameState,
   paymentId: string,
   propertyIds: PropertyState['id'][],
-  content: TechnicalSliceContent = technicalSliceContent
+  content: PlayableContent = technicalSliceContent
 ): LiquidationQuote {
   const pending = getLiquidationInteraction(state, paymentId);
   const candidates = propertyIds.length === 0
@@ -256,7 +282,7 @@ function moveOneStep(
   state: GameState,
   playerId: PlayerId,
   random: RandomProvider,
-  content: TechnicalSliceContent
+  content: PlayableContent
 ): CommandResult {
   if (state.pendingInteraction) throw new Error('移动前必须完成当前交互。');
   if (state.turn.remainingSteps <= 0 || state.turn.rolledValue === null) {
@@ -320,7 +346,7 @@ function resolveStockMarket(
   state: GameState,
   playerId: PlayerId,
   purchase: Extract<GameCommand, { type: 'RESOLVE_STOCK_MARKET' }>['purchase'],
-  content: TechnicalSliceContent
+  content: PlayableContent
 ): CommandResult {
   const pending = state.pendingInteraction;
   if (!pending || pending.type !== 'STOCK_MARKET' || pending.playerId !== playerId) {
@@ -385,7 +411,7 @@ function resolveDestination(
   state: GameState,
   playerId: PlayerId,
   random: RandomProvider,
-  content: TechnicalSliceContent
+  content: PlayableContent
 ): CommandResult {
   if (state.pendingInteraction) throw new Error('仍有未处理的交互。');
   if (state.turn.rolledValue === null || state.turn.remainingSteps !== 0) {
@@ -687,7 +713,7 @@ function confirmLiquidation(
   playerId: PlayerId,
   paymentId: string,
   propertyIds: PropertyState['id'][],
-  content: TechnicalSliceContent
+  content: PlayableContent
 ): CommandResult {
   const pending = getLiquidationInteraction(state, paymentId);
   if (pending.playerId !== playerId) {
@@ -737,7 +763,7 @@ function getSelectedLiquidationCandidates(
   state: GameState,
   playerId: PlayerId,
   propertyIds: PropertyState['id'][],
-  content: TechnicalSliceContent
+  content: PlayableContent
 ): LiquidationCandidate[] {
   if (propertyIds.length === 0) {
     throw new Error('清算地产不能为空。');
@@ -762,7 +788,7 @@ function getSelectedLiquidationCandidates(
 function requestForcedPayment(
   state: GameState,
   payment: ForcedPayment,
-  content: TechnicalSliceContent,
+  content: PlayableContent,
   events: DomainEvent[]
 ): void {
   events.push({ type: 'PAYMENT_REQUESTED', payment });
@@ -772,7 +798,7 @@ function requestForcedPayment(
 function resolveForcedPayment(
   state: GameState,
   payment: ForcedPayment,
-  content: TechnicalSliceContent,
+  content: PlayableContent,
   events: DomainEvent[]
 ): void {
   const payer = state.players.find((player) => player.id === payment.payerId);
@@ -874,7 +900,7 @@ function endTurn(
   state: GameState,
   playerId: PlayerId,
   random: RandomProvider,
-  content: TechnicalSliceContent
+  content: PlayableContent
 ): CommandResult {
   if (state.pendingInteraction) throw new Error('仍有未处理的交互。');
   if (!state.turn.readyToEnd) throw new Error('当前回合尚未完成结算。');
@@ -886,7 +912,7 @@ function advanceAfterBankruptcy(
   state: GameState,
   playerId: PlayerId,
   random: RandomProvider,
-  content: TechnicalSliceContent
+  content: PlayableContent
 ): CommandResult {
   const player = getActivePlayer(state);
   if (!player.bankrupt) throw new Error('只有当前破产玩家可以完成破产后转交。');
@@ -899,7 +925,7 @@ function advanceTurn(
   state: GameState,
   playerId: PlayerId,
   random: RandomProvider,
-  content: TechnicalSliceContent
+  content: PlayableContent
 ): CommandResult {
 
   const nextState = structuredClone(state);
@@ -962,7 +988,7 @@ function settleStocksForCompletedRound(
   state: GameState,
   completedRound: number,
   random: RandomProvider,
-  content: TechnicalSliceContent,
+  content: PlayableContent,
   events: DomainEvent[]
 ): void {
   for (const player of state.players) {
