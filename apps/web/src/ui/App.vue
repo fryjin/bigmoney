@@ -7,9 +7,8 @@ import {
   watch
 } from 'vue';
 import { animate } from 'animejs';
-import { technicalSliceContent } from '@bigmoney/game-content';
 import {
-  createTechnicalSliceState,
+  createLocalGameState,
   getLiquidationCandidates,
   getNextActivePlayerIndex,
   quoteLiquidation,
@@ -20,8 +19,8 @@ import {
 } from '@bigmoney/game-core';
 import {
   type PresentationCue,
-  type TechnicalSliceSession,
-  type TechnicalSliceSessionSnapshot,
+  type LocalGameSession,
+  type LocalGameSessionSnapshot,
   type StableFlowPhase
 } from '@bigmoney/game-flow';
 import { SeededRandom } from '@bigmoney/game-random';
@@ -36,26 +35,29 @@ import {
   presentSceneCue
 } from '../phaser/bridges/sceneBridge';
 import {
-  clearTechnicalSliceSave,
+  clearLocalGameSave,
   logDomainEvents,
-  saveTechnicalSliceSave,
-  type TechnicalSliceLoadResult
+  saveLocalGameSave,
+  type LocalGameLoadResult
 } from '../session/persistence';
 import {
-  createTechnicalSliceSessionLifecycle,
+  createLocalGameSessionLifecycle,
   isPrivateInfoHidden
 } from '../session/sessionLifecycle';
 import type { BrowserTestFixture } from '../session/browserTestFixtures';
 import { renderBrowserTestGameText } from '../session/browserTestProjection';
+import { CURRENT_GAME_CONTENT } from '../session/currentGameContent';
+import { getCurrentTilePresentation } from './currentTilePresentation';
 
 const props = defineProps<{
-  initialLoad: TechnicalSliceLoadResult;
+  initialLoad: LocalGameLoadResult;
   browserTestFixture: BrowserTestFixture | null;
 }>();
 
 const initialSave = props.initialLoad.save;
 const initialSession = initialSave ?? props.browserTestFixture;
-const snapshot = shallowRef<TechnicalSliceSessionSnapshot | null>(null);
+const sessionContent = props.browserTestFixture?.content ?? CURRENT_GAME_CONTENT;
+const snapshot = shallowRef<LocalGameSessionSnapshot | null>(null);
 const cardsOpen = ref(false);
 const assetsOpen = ref(false);
 const selectedStockId = ref('');
@@ -84,11 +86,16 @@ let lastLoggedDomainRevision = -1;
 let lastSavedRoundKey = '';
 let random: SeededRandom | null = null;
 
-const lifecycle = createTechnicalSliceSessionLifecycle(handleSessionSnapshot);
+const lifecycle = createLocalGameSessionLifecycle(handleSessionSnapshot);
 
 const game = computed<GameState | null>(() => snapshot.value?.game ?? null);
 const activePlayer = computed(
   () => game.value?.players[game.value.activePlayerIndex] ?? null
+);
+const currentTile = computed(() =>
+  activePlayer.value
+    ? sessionContent.tiles[activePlayer.value.position] ?? null
+    : null
 );
 const nextPlayer = computed(() => {
   if (!game.value) return null;
@@ -120,7 +127,7 @@ const liquidationCandidates = computed(() => {
   return getLiquidationCandidates(currentGame, interaction.playerId).map((candidate) => ({
     ...candidate,
     name:
-      technicalSliceContent.properties.find(
+      sessionContent.properties.find(
         (property) => property.id === candidate.propertyId
       )?.name ?? candidate.propertyId,
     level: currentGame.properties[candidate.propertyId]?.level ?? 0
@@ -228,15 +235,16 @@ const propertyCounts = computed<Record<string, number>>(() => {
 });
 
 const currentPropertyDefinition = computed(() => {
-  const interaction = pending.value;
-  if (!interaction) return null;
-  if (
-    interaction.type !== 'PROPERTY_PURCHASE' &&
-    interaction.type !== 'PROPERTY_UPGRADE'
-  ) return null;
-  return technicalSliceContent.properties.find(
-    (property) => property.id === interaction.propertyId
+  const tile = currentTile.value;
+  if (!tile || tile.type !== 'PROPERTY') return null;
+  return sessionContent.properties.find(
+    (property) => property.id === tile.propertyId
   ) ?? null;
+});
+const currentPropertyState = computed(() => {
+  const tile = currentTile.value;
+  if (!tile || tile.type !== 'PROPERTY' || !game.value) return null;
+  return game.value.properties[tile.propertyId] ?? null;
 });
 
 const statusMessage = computed(() => {
@@ -278,12 +286,18 @@ const statusMessage = computed(() => {
   return '点击投骰，开始本回合';
 });
 
-const currentTileName = computed(() => {
-  const tile = activePlayer.value
-    ? technicalSliceContent.tiles[activePlayer.value.position]
-    : null;
-  return tile?.name ?? '未知地格';
+const currentTilePosition = computed(() => {
+  if (!activePlayer.value) return '未知地格';
+  return getCurrentTilePresentation(
+    sessionContent,
+    activePlayer.value.position
+  ).positionText;
 });
+const currentTileAvailability = computed(() =>
+  activePlayer.value
+    ? getCurrentTilePresentation(sessionContent, activePlayer.value.position).availability
+    : null
+);
 
 const savedAtText = computed(() => {
   if (!initialSave) return '';
@@ -291,7 +305,7 @@ const savedAtText = computed(() => {
   return Number.isNaN(date.getTime()) ? initialSave.savedAt : date.toLocaleString('zh-CN');
 });
 
-function handleSessionSnapshot(next: TechnicalSliceSessionSnapshot): void {
+function handleSessionSnapshot(next: LocalGameSessionSnapshot): void {
   snapshot.value = next;
   const generation = lifecycle.getGeneration();
 
@@ -340,8 +354,8 @@ watch(
   (interaction) => {
     if (interaction?.type !== 'STOCK_MARKET') return;
     selectedStockId.value = interaction.offeredStockIds[0] ?? '';
-    selectedPrincipal.value = technicalSliceContent.stockMarket.investmentTiers[0] ?? 50;
-    selectedPeriod.value = technicalSliceContent.stockMarket.periods[0] ?? 2;
+    selectedPrincipal.value = sessionContent.stockMarket.investmentTiers[0] ?? 50;
+    selectedPeriod.value = sessionContent.stockMarket.periods[0] ?? 2;
   },
   { immediate: true }
 );
@@ -381,10 +395,11 @@ onBeforeUnmount(() => {
 });
 
 function queueStableSave(
-  next: TechnicalSliceSessionSnapshot,
+  next: LocalGameSessionSnapshot,
   generation: number
 ): void {
   if (!isStableFlowPhase(next.flow)) return;
+  if (sessionContent !== CURRENT_GAME_CONTENT) return;
   if (!random) return;
   const flow = next.flow;
   const saveKey = [
@@ -410,7 +425,8 @@ function queueStableSave(
 
   lifecycle.enqueueForActiveSession(
     async () => {
-      await saveTechnicalSliceSave(
+      await saveLocalGameSave(
+        CURRENT_GAME_CONTENT,
         gameSnapshot,
         randomSnapshot,
         flow,
@@ -429,7 +445,7 @@ function queueStableSave(
 
 async function runPresentation(
   cue: PresentationCue,
-  sourceSession: TechnicalSliceSession,
+  sourceSession: LocalGameSession,
   generation: number
 ): Promise<void> {
   try {
@@ -456,7 +472,7 @@ async function runPresentation(
   sourceSession.presentationDone(cue.id);
 }
 
-function performAction(operation: (session: TechnicalSliceSession) => void): void {
+function performAction(operation: (session: LocalGameSession) => void): void {
   const session = lifecycle.getSession();
   if (
     !session ||
@@ -593,14 +609,14 @@ function continueSavedGame(): void {
 }
 
 function stockName(stockId: string): string {
-  return technicalSliceContent.stocks.find((stock) => stock.id === stockId)?.name ?? stockId;
+  return sessionContent.stocks.find((stock) => stock.id === stockId)?.name ?? stockId;
 }
 
 function cardName(cardInstanceId: string): string {
   const interaction = pending.value;
   if (interaction?.type !== 'CARD_REPLACEMENT') return cardInstanceId;
   const instance = interaction.candidateCards.find((card) => card.instanceId === cardInstanceId);
-  return technicalSliceContent.cards.find((card) => card.id === instance?.cardId)?.name ?? cardInstanceId;
+  return sessionContent.cards.find((card) => card.id === instance?.cardId)?.name ?? cardInstanceId;
 }
 
 function eventAmount(event: DomainEvent): string | null {
@@ -612,7 +628,7 @@ function eventAmount(event: DomainEvent): string | null {
   return `${change.amount > 0 ? '+' : ''}${change.amount * 10}万元`;
 }
 
-function resetTechnicalSlice(): void {
+function resetLocalGame(): void {
   if (actionLocked.value) return;
   sessionAccepted.value = false;
   resumePromptOpen.value = false;
@@ -630,7 +646,7 @@ async function startNewGame(): Promise<void> {
 
   try {
     const cleared = lifecycle.retireAndDrain(async () => {
-      await clearTechnicalSliceSave();
+      await clearLocalGameSave();
     });
     clearSessionTransientUi();
     snapshot.value = null;
@@ -638,7 +654,8 @@ async function startNewGame(): Promise<void> {
     startSession(
       {
         random: new SeededRandom(20260805),
-        game: createTechnicalSliceState(playerCount),
+        content: CURRENT_GAME_CONTENT,
+        game: createLocalGameState(CURRENT_GAME_CONTENT, playerCount),
         flow: 'turnReady'
       },
       true,
@@ -655,6 +672,7 @@ async function startNewGame(): Promise<void> {
 function startSession(
   seed: {
     random: SeededRandom;
+    content: typeof sessionContent;
     game: GameState;
     flow: StableFlowPhase;
   },
@@ -711,6 +729,7 @@ if (initialSession) {
       random: initialSave
         ? SeededRandom.fromSnapshot(initialSave.random)
         : SeededRandom.fromSnapshot(props.browserTestFixture!.random),
+      content: sessionContent,
       game: initialSession.game,
       flow: initialSession.flow
     },
@@ -745,10 +764,11 @@ if (initialSession) {
       </div>
       <dl>
         <div><dt>余额</dt><dd>{{ activePlayer.cash * 10 }}万元</dd></div>
-        <div><dt>位置</dt><dd>{{ currentTileName }}</dd></div>
+        <div><dt>位置</dt><dd>{{ currentTilePosition }}</dd></div>
+        <div v-if="currentTileAvailability"><dt>地格状态</dt><dd>{{ currentTileAvailability }}</dd></div>
         <div><dt>进度</dt><dd>第 {{ game.round }} 大轮</dd></div>
       </dl>
-      <button class="text-button" type="button" @click="resetTechnicalSlice">重置技术切片</button>
+      <button class="text-button" type="button" @click="resetLocalGame">重新开始</button>
     </aside>
 
     <aside v-else class="current-player-card privacy-card">
@@ -787,8 +807,8 @@ if (initialSession) {
       <div v-if="activePlayer?.cards.length" class="collection-grid">
         <article v-for="card in activePlayer?.cards ?? []" :key="card.instanceId" class="collection-card">
           <span class="card-rarity">CARD</span>
-          <strong>{{ technicalSliceContent.cards.find((item) => item.id === card.cardId)?.name }}</strong>
-          <small>{{ technicalSliceContent.cards.find((item) => item.id === card.cardId)?.description }}</small>
+          <strong>{{ sessionContent.cards.find((item) => item.id === card.cardId)?.name }}</strong>
+          <small>{{ sessionContent.cards.find((item) => item.id === card.cardId)?.description }}</small>
         </article>
       </div>
       <p v-else class="empty-state">尚未获得卡牌。</p>
@@ -807,7 +827,7 @@ if (initialSession) {
           :key="property.id"
           class="asset-row"
         >
-          <span>{{ technicalSliceContent.properties.find((item) => item.id === property.id)?.name }}</span>
+          <span>{{ sessionContent.properties.find((item) => item.id === property.id)?.name }}</span>
           <b>L{{ property.level }}</b>
         </article>
         <p v-if="!Object.values(game.properties).some((item) => item.ownerId === activePlayer?.id)" class="empty-state">
@@ -846,14 +866,14 @@ if (initialSession) {
             @click="selectedStockId = stockId"
           >
             <strong>{{ stockName(stockId) }}</strong>
-            <small>{{ technicalSliceContent.stocks.find((item) => item.id === stockId)?.sector }}</small>
+            <small>{{ sessionContent.stocks.find((item) => item.id === stockId)?.sector }}</small>
           </button>
         </div>
 
         <div class="option-label">投资金额</div>
         <div class="segmented">
           <button
-            v-for="tier in technicalSliceContent.stockMarket.investmentTiers"
+            v-for="tier in sessionContent.stockMarket.investmentTiers"
             :key="tier"
             :class="{ selected: selectedPrincipal === tier }"
             type="button"
@@ -867,7 +887,7 @@ if (initialSession) {
         <div class="option-label">持有周期</div>
         <div class="segmented">
           <button
-            v-for="period in technicalSliceContent.stockMarket.periods"
+            v-for="period in sessionContent.stockMarket.periods"
             :key="period"
             :class="{ selected: selectedPeriod === period }"
             type="button"
@@ -897,7 +917,7 @@ if (initialSession) {
           <div class="property-miniature">🏙️</div>
           <div>
             <h2>{{ currentPropertyDefinition?.name }}</h2>
-            <p>无主地产 · 当前等级 L0</p>
+            <p>无主地产 · 当前等级 L{{ currentPropertyState?.level ?? 0 }}</p>
           </div>
         </div>
         <div class="property-numbers">
@@ -924,7 +944,7 @@ if (initialSession) {
           <div class="property-miniature">🏗️</div>
           <div>
             <h2>{{ currentPropertyDefinition?.name }}</h2>
-            <p>L{{ pending.currentLevel }} → L{{ pending.nextLevel }}</p>
+            <p>L{{ currentPropertyState?.level ?? pending.currentLevel }} → L{{ pending.nextLevel }}</p>
           </div>
         </div>
         <div class="property-numbers">
@@ -966,7 +986,7 @@ if (initialSession) {
       <article v-else-if="pending.type === 'CARD_REPLACEMENT'" class="decision-modal replacement-modal">
         <span class="eyebrow">手牌上限 · 3张</span>
         <h2>选择一张弃置</h2>
-        <p class="modal-lead">本技术切片采用当前临时配置：抽牌后四选三。</p>
+        <p class="modal-lead">本局按当前规则：抽牌后四选三。</p>
         <div class="replacement-grid">
           <button
             v-for="card in pending.candidateCards"
@@ -1108,7 +1128,7 @@ if (initialSession) {
         </div>
         <p v-if="props.initialLoad.migrated" class="migration-note">旧版存档将在继续后升级到新的完整性校验格式。</p>
         <div class="session-entry-actions">
-          <button class="secondary-action" type="button" :disabled="actionLocked" @click="resetTechnicalSlice">重新开始</button>
+          <button class="secondary-action" type="button" :disabled="actionLocked" @click="resetLocalGame">重新开始</button>
           <button class="primary-action" type="button" :disabled="actionLocked" @click="continueSavedGame">继续游戏</button>
         </div>
       </article>
@@ -1145,6 +1165,6 @@ if (initialSession) {
       <button type="button" @click="recoveryNotice = null">知道了</button>
     </div>
 
-    <div class="build-badge">PHASE 2.1 · 2–4 PLAYER LOCAL GAME</div>
+    <div class="build-badge">PHASE 3.0 · 36-TILE LOCAL GAME</div>
   </main>
 </template>

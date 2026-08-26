@@ -1,10 +1,13 @@
 import {
+  technicalSliceContent,
+  type TechnicalSliceContent
+} from '@bigmoney/game-content';
+import {
   createTechnicalSliceState,
   type GameState
 } from '@bigmoney/game-core';
 import type { RandomSnapshot } from '@bigmoney/game-random';
 import type { StableFlowPhase } from '@bigmoney/game-flow';
-import type { TechnicalSliceLoadResult } from './persistence';
 
 export type BrowserTestFixtureName =
   | 'solvent-rent'
@@ -21,6 +24,7 @@ export type BrowserTestFixtureName =
 
 export interface BrowserTestFixture {
   name: BrowserTestFixtureName;
+  content: TechnicalSliceContent;
   game: GameState;
   random: RandomSnapshot;
   flow: StableFlowPhase;
@@ -65,7 +69,7 @@ export function getBrowserTestFixture(
 }
 
 export function getBrowserTestFixtureForInitialLoad(
-  initialLoad: TechnicalSliceLoadResult,
+  initialLoad: { status: 'empty' | 'ready' | 'recovered' },
   mode: string,
   fixtureName: string | null
 ): BrowserTestFixture | null {
@@ -110,6 +114,7 @@ function createRentFixture(
 
   return {
     name,
+    content: technicalSliceContent,
     game,
     random: { ...FIXTURE_RANDOM },
     flow: 'turnReady'
@@ -183,6 +188,7 @@ function createFixture(
 ): BrowserTestFixture {
   return {
     name,
+    content: technicalSliceContent,
     game,
     random: { ...random },
     flow: 'turnReady'

@@ -3,6 +3,7 @@ export {
 } from './machine';
 
 export {
+  LocalGameSession,
   TechnicalSliceSession
 } from './controller';
 
@@ -15,6 +16,8 @@ export type {
 export type {
   PresentationCue,
   PresentationCueKind,
+  LocalGameContent,
+  LocalGameSessionSnapshot,
   TechnicalSliceSessionSnapshot,
   StockPurchaseSelection
 } from './controller';

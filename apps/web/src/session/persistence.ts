@@ -27,7 +27,7 @@ export const LOCAL_GAME_QUARANTINE_SLOT = 'local-game-quarantine-latest';
 export const CURRENT_LOCAL_GAME_SAVE_SCHEMA_VERSION = 4 as const;
 
 const LEGACY_SAVE_SCHEMA_VERSION = 2 as const;
-const EVENT_SESSION = 'technical-slice-phase-1.1';
+const LOCAL_GAME_EVENT_SESSION = 'local-game-current';
 
 type SavePayload = Omit<TechnicalSliceSave, 'integrity'>;
 type LocalGameSavePayload = Omit<LocalGameSave, 'integrity'>;
@@ -212,7 +212,7 @@ export async function saveTechnicalSliceSave(
 
 export async function logDomainEvents(events: DomainEvent[]): Promise<void> {
   for (const event of events) {
-    await appendEvent(EVENT_SESSION, event);
+    await appendEvent(LOCAL_GAME_EVENT_SESSION, event);
   }
 }
 

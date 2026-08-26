@@ -6,6 +6,11 @@ import {
   type GameState,
   type PlayerId
 } from '@bigmoney/game-core';
+import {
+  technicalSliceContent,
+  type GameContent,
+  type TechnicalSliceContent
+} from '@bigmoney/game-content';
 import type { RandomProvider } from '@bigmoney/game-random';
 import { createActor } from 'xstate';
 import {
@@ -29,7 +34,7 @@ export interface PresentationCue {
   events: DomainEvent[];
 }
 
-export interface TechnicalSliceSessionSnapshot {
+export interface LocalGameSessionSnapshot {
   flow: FlowPhase;
   game: GameState;
   cue: PresentationCue | null;
@@ -39,15 +44,20 @@ export interface TechnicalSliceSessionSnapshot {
   domainRevision: number;
 }
 
+/** @deprecated Historical technical-slice compatibility alias. */
+export type TechnicalSliceSessionSnapshot = LocalGameSessionSnapshot;
+
 export interface StockPurchaseSelection {
   stockId: string;
   principal: number;
   period: 2 | 4 | 6;
 }
 
-type Listener = (snapshot: TechnicalSliceSessionSnapshot) => void;
+export type LocalGameContent = GameContent | TechnicalSliceContent;
 
-export class TechnicalSliceSession {
+type Listener = (snapshot: LocalGameSessionSnapshot) => void;
+
+export class LocalGameSession {
   private readonly actor = createActor(technicalSliceFlowMachine);
   private readonly listeners = new Set<Listener>();
   private gameState: GameState;
@@ -61,7 +71,8 @@ export class TechnicalSliceSession {
 
   constructor(
     private readonly random: RandomProvider,
-    initialState: GameState = createTechnicalSliceState(),
+    private readonly content: LocalGameContent,
+    initialState: GameState,
     initialFlow: StableFlowPhase = 'turnReady'
   ) {
     this.gameState = structuredClone(initialState);
@@ -77,7 +88,7 @@ export class TechnicalSliceSession {
     }
   }
 
-  getSnapshot(): TechnicalSliceSessionSnapshot {
+  getSnapshot(): LocalGameSessionSnapshot {
     return {
       flow: String(this.actor.getSnapshot().value) as FlowPhase,
       game: structuredClone(this.gameState),
@@ -121,7 +132,8 @@ export class TechnicalSliceSession {
       const result = executeCommand(
         this.gameState,
         { type: 'ROLL_DICE', playerId },
-        this.random
+        this.random,
+        this.content
       );
       this.actor.send({ type: 'ROLL_STARTED' });
       this.commit(result, 'ROLL');
@@ -135,7 +147,8 @@ export class TechnicalSliceSession {
       const result = executeCommand(
         this.gameState,
         { type: 'RESOLVE_STOCK_MARKET', playerId, purchase },
-        this.random
+        this.random,
+        this.content
       );
       this.actor.send({ type: 'STOCK_RESOLVED' });
       this.commit(result, 'STOCK');
@@ -149,7 +162,8 @@ export class TechnicalSliceSession {
       const result = executeCommand(
         this.gameState,
         { type: 'BUY_PROPERTY', playerId },
-        this.random
+        this.random,
+        this.content
       );
       this.actor.send({ type: 'PROPERTY_RESOLVED' });
       this.commit(result, 'PROPERTY');
@@ -163,7 +177,8 @@ export class TechnicalSliceSession {
       const result = executeCommand(
         this.gameState,
         { type: 'SKIP_PROPERTY', playerId },
-        this.random
+        this.random,
+        this.content
       );
       this.actor.send({ type: 'PROPERTY_RESOLVED' });
       this.commit(result, 'PROPERTY');
@@ -177,7 +192,8 @@ export class TechnicalSliceSession {
       const result = executeCommand(
         this.gameState,
         { type: 'UPGRADE_PROPERTY', playerId },
-        this.random
+        this.random,
+        this.content
       );
       this.actor.send({ type: 'UPGRADE_RESOLVED' });
       this.commit(result, 'UPGRADE');
@@ -191,7 +207,8 @@ export class TechnicalSliceSession {
       const result = executeCommand(
         this.gameState,
         { type: 'SKIP_UPGRADE', playerId },
-        this.random
+        this.random,
+        this.content
       );
       this.actor.send({ type: 'UPGRADE_RESOLVED' });
       this.commit(result, 'UPGRADE');
@@ -205,7 +222,8 @@ export class TechnicalSliceSession {
       const result = executeCommand(
         this.gameState,
         { type: 'ACKNOWLEDGE_RESULT', playerId },
-        this.random
+        this.random,
+        this.content
       );
       this.actor.send({ type: 'RESULT_ACKNOWLEDGED' });
       this.commitWithoutCue(result);
@@ -223,7 +241,8 @@ export class TechnicalSliceSession {
           playerId,
           cardInstanceId
         },
-        this.random
+        this.random,
+        this.content
       );
       this.actor.send({ type: 'RESULT_ACKNOWLEDGED' });
       this.commitWithoutCue(result);
@@ -247,7 +266,8 @@ export class TechnicalSliceSession {
       const result = executeCommand(
         this.gameState,
         { type: 'CONFIRM_LIQUIDATION', playerId, paymentId, propertyIds },
-        this.random
+        this.random,
+        this.content
       );
       this.commitLiquidation(result);
     });
@@ -260,7 +280,8 @@ export class TechnicalSliceSession {
       const result = executeCommand(
         this.gameState,
         { type: 'END_TURN', playerId },
-        this.random
+        this.random,
+        this.content
       );
       this.actor.send({ type: 'TURN_ENDED' });
       this.commit(result, 'TURN');
@@ -316,7 +337,8 @@ export class TechnicalSliceSession {
         const result = executeCommand(
           this.gameState,
           { type: 'ADVANCE_AFTER_BANKRUPTCY', playerId },
-          this.random
+          this.random,
+          this.content
         );
         this.actor.send({ type: 'BANKRUPTCY_PRESENTED' });
         this.commitWithoutCue(result);
@@ -342,7 +364,8 @@ export class TechnicalSliceSession {
     const result = executeCommand(
       this.gameState,
       { type: 'MOVE_ONE_STEP', playerId },
-      this.random
+      this.random,
+      this.content
     );
     this.actor.send({ type: 'STEP_STARTED' });
     this.commit(result, 'MOVE');
@@ -382,7 +405,8 @@ export class TechnicalSliceSession {
     const result = executeCommand(
       this.gameState,
       { type: 'RESOLVE_DESTINATION', playerId },
-      this.random
+      this.random,
+      this.content
     );
 
     this.gameState = result.nextState;
@@ -572,5 +596,19 @@ export class TechnicalSliceSession {
   private emit(): void {
     const snapshot = this.getSnapshot();
     for (const listener of this.listeners) listener(snapshot);
+  }
+}
+
+/**
+ * Historical technical-slice session compatibility wrapper. Production code
+ * should construct LocalGameSession with its canonical GameContent instead.
+ */
+export class TechnicalSliceSession extends LocalGameSession {
+  constructor(
+    random: RandomProvider,
+    initialState: GameState = createTechnicalSliceState(),
+    initialFlow: StableFlowPhase = 'turnReady'
+  ) {
+    super(random, technicalSliceContent, initialState, initialFlow);
   }
 }

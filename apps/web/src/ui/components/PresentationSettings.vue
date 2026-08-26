@@ -33,7 +33,7 @@ const qualityOptions: readonly {
   {
     value: 'standard',
     label: '标准',
-    description: '推荐用于当前技术切片与iPad。'
+    description: '推荐用于当前36格本地对局与iPad。'
   },
   {
     value: 'economy',
@@ -143,7 +143,7 @@ function updateMotion(motion: MotionPreference): void {
       <div>
         <strong>{{ failedAssets.length ? '部分视觉资源加载失败' : '视觉资源接口正常' }}</strong>
         <small v-if="failedAssets.length">{{ failedAssets.join('、') }}</small>
-        <small v-else>当前技术切片资源均已进入统一注册表。</small>
+        <small v-else>当前本地对局资源均已进入统一注册表。</small>
       </div>
     </div>
   </section>
