@@ -86,12 +86,12 @@ test('Scenarios B, C, D, G: liquidation remains canonical through partial recove
   const partiallyLiquidated = await readGameText(page);
   expect(partiallyLiquidated.pendingLiquidation?.paymentId).toBe(paymentId);
   expect(player(partiallyLiquidated, 'P2')?.cash).toBe(45);
-  expect(property(partiallyLiquidated, 'A2')).toEqual({ id: 'A2', ownerId: null, level: 0 });
-  expect(property(partiallyLiquidated, 'A3')).toEqual({ id: 'A3', ownerId: 'P2', level: 0 });
+  expect(property(partiallyLiquidated, 'HARBOR_03')).toEqual({ id: 'HARBOR_03', ownerId: null, level: 0 });
+  expect(property(partiallyLiquidated, 'HARBOR_05')).toEqual({ id: 'HARBOR_05', ownerId: 'P2', level: 0 });
   await expect(page.locator('.liquidation-property')).toHaveCount(1);
   await expect(page.locator('.liquidation-submit')).toBeDisabled();
 
-  await page.waitForTimeout(250);
+  await waitForStableSave(page, 'awaitingLiquidation');
   await page.reload();
   await expect(page.locator('.session-entry-card')).toBeVisible();
   await page.locator('.session-entry-card .primary-action').click();
@@ -101,8 +101,8 @@ test('Scenarios B, C, D, G: liquidation remains canonical through partial recove
   expect(restored.pendingLiquidation?.paymentId).toBe(paymentId);
   expect(restored.domainRevision).toBe(0);
   expect(restored.lastEventTypes).toEqual([]);
-  expect(property(restored, 'A2')).toEqual({ id: 'A2', ownerId: null, level: 0 });
-  expect(property(restored, 'A3')).toEqual({ id: 'A3', ownerId: 'P2', level: 0 });
+  expect(property(restored, 'HARBOR_03')).toEqual({ id: 'HARBOR_03', ownerId: null, level: 0 });
+  expect(property(restored, 'HARBOR_05')).toEqual({ id: 'HARBOR_05', ownerId: 'P2', level: 0 });
   await expect(page.locator('.liquidation-property')).toHaveCount(1);
   await expect(page.locator('.liquidation-submit')).toBeDisabled();
   await expect(page.locator('.dice-button')).toBeDisabled();
@@ -115,7 +115,7 @@ test('Scenarios B, C, D, G: liquidation remains canonical through partial recove
   expect(paid.pendingLiquidation).toBeNull();
   expect(player(paid, 'P2')?.cash).toBe(5);
   expect(player(paid, 'P1')?.cash).toBe(575);
-  expect(property(paid, 'A3')).toEqual({ id: 'A3', ownerId: null, level: 0 });
+  expect(property(paid, 'HARBOR_05')).toEqual({ id: 'HARBOR_05', ownerId: null, level: 0 });
   expect(runtimeIssues).toEqual([]);
 });
 
@@ -134,7 +134,7 @@ test('Scenario E: a three-player fixture reaches bankruptcy and an off-turn hand
   expect(player(bankrupt, 'P2')).toMatchObject({ cash: 0, bankrupt: true });
   expect(player(bankrupt, 'P1')?.cash).toBe(540);
   expect(player(bankrupt, 'P3')).toMatchObject({ cash: 500, bankrupt: false });
-  expect(property(bankrupt, 'A2')).toEqual({ id: 'A2', ownerId: null, level: 0 });
+  expect(property(bankrupt, 'HARBOR_03')).toEqual({ id: 'HARBOR_03', ownerId: null, level: 0 });
   await expect(page.locator('.bankruptcy-card .primary-action')).toBeEnabled();
   await page.screenshot({
     path: testInfo.outputPath('bankruptcy-1194x834.png'),
@@ -188,11 +188,12 @@ test('Scenarios F and H: final bankruptcy enters finished and restores without r
   await expect(page.locator('.dice-button')).toHaveCount(0);
   await expect(page.locator('.end-turn')).toHaveCount(0);
 
-  await page.waitForTimeout(250);
+  await waitForStableSave(page, 'finished');
   await page.reload();
   await expect(page.locator('.session-entry-card')).toBeVisible();
   await page.locator('.session-entry-card .primary-action').click();
   await expectFlow(page, 'finished');
+  await expect(page.locator('.scene-loading')).toHaveCount(0);
 
   const restored = await readGameText(page);
   expect(restored.status).toBe('FINISHED');
@@ -251,15 +252,40 @@ async function openLiquidation(page: Page, fixture: string): Promise<void> {
 async function visitFixture(page: Page, fixture: string): Promise<void> {
   await page.goto(`/?fixture=${fixture}`);
   await expectFlow(page, 'turnReady');
+  await expect(page.locator('.scene-loading')).toHaveCount(0);
 }
 
 async function readGameText(page: Page): Promise<BrowserGameText> {
+  await page.waitForFunction(
+    () => typeof window.render_game_to_text === 'function'
+  );
+
   return page.evaluate(() => {
     if (typeof window.render_game_to_text !== 'function') {
       throw new Error('browser-test state projection is unavailable.');
     }
     return JSON.parse(window.render_game_to_text()) as BrowserGameText;
   });
+}
+
+async function waitForStableSave(page: Page, flow: string): Promise<void> {
+  await page.waitForFunction(async (expectedFlow) => {
+    const database = await new Promise<IDBDatabase | null>((resolve) => {
+      const request = indexedDB.open('bigmoney-local-v1');
+      request.onerror = () => resolve(null);
+      request.onsuccess = () => resolve(request.result);
+    });
+    if (!database) return false;
+
+    const record = await new Promise<{ payload?: { flow?: string } } | undefined>((resolve) => {
+      const transaction = database.transaction('snapshots', 'readonly');
+      const request = transaction.objectStore('snapshots').get('local-game-current');
+      request.onerror = () => resolve(undefined);
+      request.onsuccess = () => resolve(request.result as { payload?: { flow?: string } } | undefined);
+    });
+    database.close();
+    return record?.payload?.flow === expectedFlow;
+  }, flow);
 }
 
 async function expectFlow(page: Page, flow: string): Promise<void> {

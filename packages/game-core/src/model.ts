@@ -1,4 +1,7 @@
-import type { TechnicalSliceContent } from '@bigmoney/game-content';
+import type {
+  GameContent,
+  TechnicalSliceContent
+} from '@bigmoney/game-content';
 
 export type PlayerId = 'P1' | 'P2' | string;
 export type PropertyId = string;
@@ -169,7 +172,9 @@ export type PendingInteraction =
 
 export interface GameState {
   ruleVersion: string;
-  technicalSliceVersion: string;
+  boardVersion: string;
+  /** @deprecated Legacy compatibility for Persistence v3; not a formal board identity. */
+  technicalSliceVersion?: string;
   status: GameStatus;
   winnerId: PlayerId | null;
   round: number;
@@ -339,5 +344,5 @@ export interface CommandResult {
 }
 
 export interface EngineOptions {
-  content?: TechnicalSliceContent;
+  content?: GameContent | TechnicalSliceContent;
 }

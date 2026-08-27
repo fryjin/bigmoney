@@ -1,23 +1,28 @@
 import { describe, expect, it } from 'vitest';
 import {
-  createTechnicalSliceState,
+  createLocalGameState,
   getNextActivePlayerIndex
 } from '@bigmoney/game-core';
+import { fullMap36Content } from '@bigmoney/game-content';
 import { SeededRandom } from '@bigmoney/game-random';
 import {
-  createTechnicalSliceSessionLifecycle,
+  createLocalGameSessionLifecycle,
   isPrivateInfoHidden,
-  type TechnicalSliceSessionSeed
+  type LocalGameSessionSeed
 } from './sessionLifecycle';
 
-describe('technical slice session lifecycle', () => {
+describe('local game session lifecycle', () => {
   it.each([2, 3, 4] as const)(
     'starts a canonical %i-player session from the supplied Core state',
     (playerCount) => {
-      const lifecycle = createTechnicalSliceSessionLifecycle(() => {});
+      const lifecycle = createLocalGameSessionLifecycle(() => {});
       const session = lifecycle.start(createSeed(playerCount));
 
-      expect(session.getSnapshot().game.players).toHaveLength(playerCount);
+      const game = session.getSnapshot().game;
+      expect(game.boardVersion).toBe(fullMap36Content.boardVersion);
+      expect(game.players).toHaveLength(playerCount);
+      expect(game.players.every((player) => player.position === 0)).toBe(true);
+      expect(Object.keys(game.properties)).toHaveLength(20);
       expect(lifecycle.getSession()).toBe(session);
 
       lifecycle.dispose();
@@ -25,12 +30,13 @@ describe('technical slice session lifecycle', () => {
   );
 
   it('continues a restored save without changing its canonical roster', () => {
-    const state = createTechnicalSliceState(4);
+    const state = createLocalGameState(fullMap36Content, 4);
     state.activePlayerIndex = 2;
-    const lifecycle = createTechnicalSliceSessionLifecycle(() => {});
+    const lifecycle = createLocalGameSessionLifecycle(() => {});
 
     const session = lifecycle.start({
       random: new SeededRandom(20260821),
+      content: fullMap36Content,
       game: state,
       flow: 'awaitingHandoff'
     });
@@ -49,7 +55,7 @@ describe('technical slice session lifecycle', () => {
 
   it('removes the old subscription before a replacement session becomes active', () => {
     const observedPlayerCounts: number[] = [];
-    const lifecycle = createTechnicalSliceSessionLifecycle((snapshot) => {
+    const lifecycle = createLocalGameSessionLifecycle((snapshot) => {
       observedPlayerCounts.push(snapshot.game.players.length);
     });
     const oldSession = lifecycle.start(createSeed(2));
@@ -70,7 +76,7 @@ describe('technical slice session lifecycle', () => {
   ] as const)(
     'replaces a %i-player session with the selected canonical %i-player session',
     (firstPlayerCount, replacementPlayerCount) => {
-      const lifecycle = createTechnicalSliceSessionLifecycle(() => {});
+      const lifecycle = createLocalGameSessionLifecycle(() => {});
       lifecycle.start(createSeed(firstPlayerCount));
       lifecycle.start(createSeed(replacementPlayerCount));
 
@@ -83,7 +89,7 @@ describe('technical slice session lifecycle', () => {
   );
 
   it('uses the Core next-active-player query when a player is bankrupt', () => {
-    const game = createTechnicalSliceState(4);
+    const game = createLocalGameState(fullMap36Content, 4);
     game.activePlayerIndex = 0;
     game.players[1]!.bankrupt = true;
 
@@ -93,7 +99,7 @@ describe('technical slice session lifecycle', () => {
   it('drains an old save before clearing it and writing the replacement session', async () => {
     const writes: string[] = [];
     const oldWrite = createDeferred<void>();
-    const lifecycle = createTechnicalSliceSessionLifecycle(() => {});
+    const lifecycle = createLocalGameSessionLifecycle(() => {});
 
     lifecycle.start(createSeed(2));
     lifecycle.enqueueForActiveSession(async () => {
@@ -125,12 +131,33 @@ describe('technical slice session lifecycle', () => {
     expect(isPrivateInfoHidden('awaitingHandoff', false)).toBe(true);
     expect(isPrivateInfoHidden('turnReady', false)).toBe(false);
   });
+
+  it('uses the supplied full-map content for Core commands', () => {
+    const game = createLocalGameState(fullMap36Content, 2);
+    game.players[0]!.position = 7;
+    const lifecycle = createLocalGameSessionLifecycle(() => {});
+    const session = lifecycle.start({
+      random: new SeededRandom(20260826),
+      content: fullMap36Content,
+      game,
+      flow: 'turnReady'
+    });
+
+    session.roll();
+    const rollCue = session.getSnapshot().cue;
+    expect(rollCue?.kind).toBe('ROLL');
+    session.presentationDone(rollCue!.id);
+
+    expect(session.getSnapshot().game.players[0]!.position).toBe(8);
+    lifecycle.dispose();
+  });
 });
 
-function createSeed(playerCount: 2 | 3 | 4): TechnicalSliceSessionSeed {
+function createSeed(playerCount: 2 | 3 | 4): LocalGameSessionSeed {
   return {
     random: new SeededRandom(20260820 + playerCount),
-    game: createTechnicalSliceState(playerCount),
+    content: fullMap36Content,
+    game: createLocalGameState(fullMap36Content, playerCount),
     flow: 'turnReady'
   };
 }

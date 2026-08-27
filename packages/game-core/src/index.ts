@@ -1,4 +1,5 @@
 export {
+  createLocalGameState,
   createTechnicalSliceState,
   executeCommand,
   getActivePlayers,

@@ -13,6 +13,7 @@ import {
 import {
   completeScenePresentation,
   notifySceneReady,
+  notifyScenePresentationReady,
   notifySceneShutdown,
   getScenePresentationPreferences,
   offScenePreferences,
@@ -23,9 +24,10 @@ import {
   onSceneSync
 } from '../bridges/sceneBridge';
 import {
-  PROPERTY_VISUALS,
-  TECHNICAL_SLICE_NODES
-} from '../maps/technicalSliceLayout';
+  getBoardPresentationLayout,
+  type BoardPresentationLayout,
+  type PropertyPresentationAnchor
+} from '../maps/boardPresentationLayout';
 import {
   getPawnDisplayDepth,
   getPawnDisplayPosition,
@@ -34,6 +36,10 @@ import {
   toPhaserDisplayColor
 } from '../presentation/playerPresentation';
 
+type PropertyPresentationObject =
+  | Phaser.GameObjects.Container
+  | Phaser.GameObjects.Image;
+
 export class TownScene extends Phaser.Scene {
   private readonly pawns = new Map<PlayerId, Phaser.GameObjects.Image>();
   private readonly pawnSlots = new Map<
@@ -41,11 +47,14 @@ export class TownScene extends Phaser.Scene {
     { playerIndex: number; playerCount: number }
   >();
   private readonly tileShapes = new Map<string, Phaser.GameObjects.Polygon>();
-  private readonly propertyBuildings = new Map<string, Phaser.GameObjects.Image>();
+  private readonly tileLabels: Phaser.GameObjects.Text[] = [];
+  private readonly propertyBuildings = new Map<string, PropertyPresentationObject>();
   private readonly propertyBadges = new Map<string, Phaser.GameObjects.Text>();
   private readonly propertyFlags = new Map<string, Phaser.GameObjects.Container>();
   private readonly trafficObjects: Phaser.GameObjects.Container[] = [];
   private preferences: PresentationPreferences = getScenePresentationPreferences();
+  private currentLayout: BoardPresentationLayout | null = null;
+  private roadLoop?: Phaser.GameObjects.Graphics;
   private activePlayerRing?: Phaser.GameObjects.Ellipse;
   private dice?: Phaser.GameObjects.Container;
   private dicePips: Phaser.GameObjects.Arc[] = [];
@@ -59,11 +68,8 @@ export class TownScene extends Phaser.Scene {
     this.cameras.main.setBackgroundColor('#DCEBE6');
     this.cameras.main.setBounds(0, 0, 1194, 834);
     this.drawCityBase();
-    this.drawRoadLoop();
-    this.drawTiles();
-    this.placeBuildings();
+    this.placeCityLandmarks();
     this.placeCityDetails();
-    this.createActivePlayerRing();
     this.createDice();
     this.applyPresentationPreferences(this.preferences);
 
@@ -138,22 +144,23 @@ export class TownScene extends Phaser.Scene {
     }
   }
 
-  private drawRoadLoop(): void {
+  private drawRoadLoop(layout: BoardPresentationLayout): void {
     const graphics = this.add.graphics();
     graphics.setDepth(-8);
+    this.roadLoop = graphics;
 
-    const pairs = TECHNICAL_SLICE_NODES.map((node, index) => [
+    const pairs = layout.nodes.map((node, index) => [
       node,
-      TECHNICAL_SLICE_NODES[(index + 1) % TECHNICAL_SLICE_NODES.length]!
+      layout.nodes[(index + 1) % layout.nodes.length]!
     ] as const);
 
-    graphics.lineStyle(92, 0xe9e3d7, 1);
+    graphics.lineStyle(layout.road.outerWidth, 0xe9e3d7, 1);
     for (const [from, to] of pairs) graphics.lineBetween(from.x, from.y, to.x, to.y);
 
-    graphics.lineStyle(72, 0x415b64, 1);
+    graphics.lineStyle(layout.road.innerWidth, 0x415b64, 1);
     for (const [from, to] of pairs) graphics.lineBetween(from.x, from.y, to.x, to.y);
 
-    graphics.lineStyle(2, 0xf8f7ed, 0.58);
+    graphics.lineStyle(layout.road.dashWidth, 0xf8f7ed, 0.58);
     for (const [from, to] of pairs) {
       const sections = 8;
       for (let section = 0; section < sections; section += 2) {
@@ -168,9 +175,14 @@ export class TownScene extends Phaser.Scene {
       }
     }
 
-    this.drawCrosswalk(graphics, 418, 662, -25);
-    this.drawCrosswalk(graphics, 814, 463, -25);
-    this.drawCrosswalk(graphics, 630, 365, 24);
+    for (const crosswalk of layout.crosswalks) {
+      this.drawCrosswalk(
+        graphics,
+        crosswalk.x,
+        crosswalk.y,
+        crosswalk.rotationDegrees
+      );
+    }
   }
 
   private drawCrosswalk(
@@ -198,22 +210,23 @@ export class TownScene extends Phaser.Scene {
     }
   }
 
-  private drawTiles(): void {
+  private drawTiles(layout: BoardPresentationLayout): void {
     const tones: Record<string, number> = {
       start: 0xcfe7dd,
       property: 0xf5f0e2,
       event: 0xf5d7ce,
       stock: 0xd5e5f1,
       card: 0xf4e6ae,
+      reserved: 0xd9d8d1,
       finish: 0xc9d8df
     };
 
-    for (const node of TECHNICAL_SLICE_NODES) {
+    for (const node of layout.nodes) {
       const tile = this.add.polygon(node.x, node.y, [
-        -56, 0,
-        0, -31,
-        56, 0,
-        0, 31
+        -layout.tile.halfWidth, 0,
+        0, -layout.tile.halfHeight,
+        layout.tile.halfWidth, 0,
+        0, layout.tile.halfHeight
       ], tones[node.tone] ?? 0xffffff, 0.96);
       tile.setStrokeStyle(3, 0xffffff, 0.82);
       tile.setDepth(node.y - 5);
@@ -221,44 +234,61 @@ export class TownScene extends Phaser.Scene {
 
       const label = this.add.text(node.x, node.y + 10, node.label, {
         fontFamily: '"PingFang SC", "Microsoft YaHei", sans-serif',
-        fontSize: '13px',
+        fontSize: `${layout.tile.labelFontSize}px`,
         fontStyle: 'bold',
         color: '#24383f',
         align: 'center'
       });
       label.setOrigin(0.5, 0);
       label.setDepth(node.y + 3);
+      this.tileLabels.push(label);
     }
   }
 
-  private placeBuildings(): void {
+  private placeCityLandmarks(): void {
     this.createVisualAssetImage('building-bank', 788, 490);
 
     this.marketBuilding = this.createVisualAssetImage('building-market', 794, 402);
 
     this.createVisualAssetImage('building-event-hall', 444, 564);
     this.createVisualAssetImage('building-card-shop', 820, 288);
+  }
 
-    for (const [propertyId, visual] of Object.entries(PROPERTY_VISUALS)) {
-      if (!isVisualAssetId(visual.buildingKey)) continue;
-      const building = this.createVisualAssetImage(
-        visual.buildingKey,
-        visual.x,
-        visual.y
-      );
-      this.propertyBuildings.set(propertyId, building);
+  private placePropertyMarkers(layout: BoardPresentationLayout): void {
+    for (const anchor of layout.propertyAnchors) {
+      const building = anchor.assetId && isVisualAssetId(anchor.assetId)
+        ? this.createVisualAssetImage(anchor.assetId, anchor.x, anchor.y)
+        : this.createPropertyMarker(anchor);
+      this.propertyBuildings.set(anchor.propertyId, building);
 
-      const badge = this.add.text(visual.x + 52, visual.y - 112, 'L0', {
+      const badge = this.add.text(
+        anchor.x + anchor.badgeOffset.x,
+        anchor.y + anchor.badgeOffset.y,
+        'L0',
+        {
         fontFamily: 'Inter, sans-serif',
-        fontSize: '12px',
+        fontSize: anchor.assetId ? '12px' : '10px',
         fontStyle: 'bold',
         color: '#ffffff',
         backgroundColor: '#22343A',
         padding: { x: 8, y: 5 }
-      });
-      badge.setOrigin(0.5).setDepth(visual.y + 30);
-      this.propertyBadges.set(propertyId, badge);
+        }
+      );
+      badge.setOrigin(0.5).setDepth(anchor.y + 30);
+      this.propertyBadges.set(anchor.propertyId, badge);
     }
+  }
+
+  private createPropertyMarker(
+    anchor: PropertyPresentationAnchor
+  ): Phaser.GameObjects.Container {
+    const shadow = this.add.ellipse(0, 12, 44, 14, 0x20343b, 0.16);
+    const base = this.add.rectangle(0, 0, 38, 28, 0xe6d7bc)
+      .setStrokeStyle(2, 0xffffff, 0.82);
+    const roof = this.add.triangle(0, -19, -22, 12, 22, 12, 0, -16, 0xb98f6b);
+    const marker = this.add.container(anchor.x, anchor.y, [shadow, base, roof]);
+    marker.setDepth(anchor.y + 20);
+    return marker;
   }
 
   private placeCityDetails(): void {
@@ -339,7 +369,8 @@ export class TownScene extends Phaser.Scene {
         .setTexture(asset.key)
         .setOrigin(asset.origin.x, asset.origin.y)
         .setDisplaySize(asset.displaySize.width, asset.displaySize.height)
-        .setAlpha(player.bankrupt ? 0.38 : 1);
+        .setAlpha(player.bankrupt ? 0.38 : 1)
+        .setVisible(true);
 
       pawn.setData('displayColor', toPhaserDisplayColor(player.color));
 
@@ -353,8 +384,9 @@ export class TownScene extends Phaser.Scene {
     });
   }
 
-  private createActivePlayerRing(): void {
-    const start = TECHNICAL_SLICE_NODES[0]!;
+  private createActivePlayerRing(layout: BoardPresentationLayout): void {
+    const start = layout.nodes[0];
+    if (!start) return;
     this.activePlayerRing = this.add.ellipse(
       start.x,
       start.y + 13,
@@ -367,6 +399,38 @@ export class TownScene extends Phaser.Scene {
       .setStrokeStyle(4, 0xe87868, 0.92)
       .setDepth(start.y + 39)
       .setVisible(false);
+  }
+
+  private ensureBoardPresentation(layout: BoardPresentationLayout): void {
+    if (this.currentLayout?.boardVersion === layout.boardVersion) return;
+
+    this.clearBoardPresentation();
+    this.currentLayout = layout;
+    this.drawRoadLoop(layout);
+    this.drawTiles(layout);
+    this.placePropertyMarkers(layout);
+    this.createActivePlayerRing(layout);
+  }
+
+  private clearBoardPresentation(): void {
+    this.roadLoop?.destroy();
+    delete this.roadLoop;
+
+    for (const tile of this.tileShapes.values()) tile.destroy();
+    this.tileShapes.clear();
+    this.tileLabels.forEach((label) => label.destroy());
+    this.tileLabels.length = 0;
+
+    for (const building of this.propertyBuildings.values()) building.destroy();
+    this.propertyBuildings.clear();
+    for (const badge of this.propertyBadges.values()) badge.destroy();
+    this.propertyBadges.clear();
+    for (const flag of this.propertyFlags.values()) flag.destroy();
+    this.propertyFlags.clear();
+
+    this.activePlayerRing?.destroy();
+    delete this.activePlayerRing;
+    this.currentLayout = null;
   }
 
   private createVisualAssetImage(
@@ -482,7 +546,7 @@ export class TownScene extends Phaser.Scene {
     const event = events.find((candidate) => candidate.type === 'PLAYER_MOVED');
     if (!event || event.type !== 'PLAYER_MOVED') return;
     const pawn = this.pawns.get(event.playerId);
-    const target = TECHNICAL_SLICE_NODES[event.to];
+    const target = this.currentLayout?.nodes[event.to];
     if (!pawn || !target) return;
 
     const slot = this.pawnSlots.get(event.playerId);
@@ -636,11 +700,19 @@ export class TownScene extends Phaser.Scene {
   }
 
   private syncState(state: GameState): void {
+    const layout = getBoardPresentationLayout(state.boardVersion);
+    if (!layout) {
+      this.clearBoardPresentation();
+      this.hidePlayerPawns();
+      return;
+    }
+
+    this.ensureBoardPresentation(layout);
     this.ensurePlayerPawns(state.players);
 
     state.players.forEach((player, playerIndex) => {
       const pawn = this.pawns.get(player.id);
-      const node = TECHNICAL_SLICE_NODES[player.position];
+      const node = layout.nodes[player.position];
       if (!pawn || !node) return;
       const position = getPawnDisplayPosition(
         node,
@@ -666,6 +738,12 @@ export class TownScene extends Phaser.Scene {
       }
       this.ensurePropertyFlag(propertyId, toPhaserDisplayColor(owner.color));
     }
+
+    notifyScenePresentationReady();
+  }
+
+  private hidePlayerPawns(): void {
+    for (const pawn of this.pawns.values()) pawn.setVisible(false);
   }
 
   private updateActivePlayerRing(state: GameState): void {
@@ -697,13 +775,19 @@ export class TownScene extends Phaser.Scene {
       return;
     }
 
-    const visual = PROPERTY_VISUALS[propertyId as keyof typeof PROPERTY_VISUALS];
-    if (!visual) return;
+    const anchor = this.currentLayout?.propertyAnchors.find(
+      (candidate) => candidate.propertyId === propertyId
+    );
+    if (!anchor) return;
 
     const pole = this.add.rectangle(0, -28, 4, 56, 0x2f454c);
     const cloth = this.add.rectangle(15, -46, 28, 18, ownerColor);
-    const flag = this.add.container(visual.x + 62, visual.y - 8, [pole, cloth]);
-    flag.setDepth(visual.y + 50);
+    const flag = this.add.container(
+      anchor.x + anchor.flagOffset.x,
+      anchor.y + anchor.flagOffset.y,
+      [pole, cloth]
+    );
+    flag.setDepth(anchor.y + 50);
     this.propertyFlags.set(propertyId, flag);
   }
 

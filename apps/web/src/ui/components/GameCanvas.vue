@@ -11,10 +11,12 @@ import type { GameState } from '@bigmoney/game-core';
 import {
   offSceneLoadError,
   offSceneLoadProgress,
+  offScenePresentationReady,
   offSceneReady,
   offSceneShutdown,
   onSceneLoadError,
   onSceneLoadProgress,
+  onScenePresentationReady,
   onSceneReady,
   resetSceneBridge,
   onSceneShutdown,
@@ -37,7 +39,7 @@ const props = defineProps<{
 }>();
 
 const host = ref<HTMLElement | null>(null);
-const sceneReady = ref(false);
+const presentationReady = ref(false);
 const loadProgress = ref(0);
 const failedAssets = ref<string[]>([]);
 const runtimeError = ref('');
@@ -56,14 +58,17 @@ function refreshRuntimeHealth(): void {
 }
 
 function handleSceneReady(): void {
-  sceneReady.value = true;
   loadProgress.value = 1;
   refreshRuntimeHealth();
   void syncSceneState(props.gameState);
 }
 
+function handleScenePresentationReady(): void {
+  presentationReady.value = true;
+}
+
 function handleSceneShutdown(): void {
-  sceneReady.value = false;
+  presentationReady.value = false;
 }
 
 function handleLoadProgress(progress: number): void {
@@ -98,6 +103,7 @@ async function mountTownScene(): Promise<void> {
 
 onMounted(() => {
   onSceneReady(handleSceneReady);
+  onScenePresentationReady(handleScenePresentationReady);
   onSceneShutdown(handleSceneShutdown);
   onSceneLoadProgress(handleLoadProgress);
   onSceneLoadError(handleLoadError);
@@ -122,6 +128,7 @@ watch(
 onBeforeUnmount(() => {
   disposed = true;
   offSceneReady(handleSceneReady);
+  offScenePresentationReady(handleScenePresentationReady);
   offSceneShutdown(handleSceneShutdown);
   offSceneLoadProgress(handleLoadProgress);
   offSceneLoadError(handleLoadError);
@@ -147,7 +154,7 @@ onBeforeUnmount(() => {
       aria-label="Big Money 2.5D 小镇棋盘"
     ></div>
 
-    <section v-if="!sceneReady" class="scene-loading" aria-live="polite">
+    <section v-if="!presentationReady" class="scene-loading" aria-live="polite">
       <div class="loading-mark">BM</div>
       <div class="loading-copy">
         <span>LOADING MINIATURE TOWN</span>
@@ -185,7 +192,7 @@ onBeforeUnmount(() => {
       {{ failedAssets.length }}项视觉资源使用降级显示
     </div>
 
-    <div class="phase-badge">PHASE 2.1 · 2–4 PLAYER LOCAL GAME</div>
+    <div class="phase-badge">PHASE 3.0 · 36-TILE LOCAL GAME</div>
   </div>
 </template>
 

@@ -1,10 +1,8 @@
-export interface SceneNode {
-  tileId: string;
-  x: number;
-  y: number;
-  label: string;
-  tone: 'start' | 'property' | 'event' | 'stock' | 'card' | 'finish';
-}
+import { technicalSliceContent } from '@bigmoney/game-content';
+import type {
+  BoardPresentationLayout,
+  SceneNode
+} from './boardPresentationLayout';
 
 export const TECHNICAL_SLICE_NODES: readonly SceneNode[] = [
   { tileId: 'START', x: 164, y: 626, label: '出发', tone: 'start' },
@@ -22,3 +20,31 @@ export const PROPERTY_VISUALS = {
   A2: { nodeIndex: 4, buildingKey: 'building-market', x: 936, y: 350 },
   A3: { nodeIndex: 6, buildingKey: 'building-home-b', x: 468, y: 370 }
 } as const;
+
+export const TECHNICAL_SLICE_LAYOUT = {
+  boardVersion: `technical-slice-${technicalSliceContent.technicalSliceVersion}`,
+  nodes: TECHNICAL_SLICE_NODES,
+  propertyAnchors: Object.entries(PROPERTY_VISUALS).map(([propertyId, visual]) => ({
+    propertyId,
+    x: visual.x,
+    y: visual.y,
+    assetId: visual.buildingKey,
+    badgeOffset: { x: 52, y: -112 },
+    flagOffset: { x: 62, y: -8 }
+  })),
+  tile: {
+    halfWidth: 56,
+    halfHeight: 31,
+    labelFontSize: 13
+  },
+  road: {
+    outerWidth: 92,
+    innerWidth: 72,
+    dashWidth: 2
+  },
+  crosswalks: [
+    { x: 418, y: 662, rotationDegrees: -25 },
+    { x: 814, y: 463, rotationDegrees: -25 },
+    { x: 630, y: 365, rotationDegrees: 24 }
+  ]
+} as const satisfies BoardPresentationLayout;

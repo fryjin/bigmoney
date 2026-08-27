@@ -59,10 +59,13 @@ class SceneEventBus {
 
 const emitter = new SceneEventBus();
 let ready = false;
+let presentationReady = false;
+let latestSceneState: GameState | null = null;
 let preferences = loadPresentationPreferences();
 
 export const SceneBridgeEvents = {
   ready: 'scene:ready',
+  presentationReady: 'scene:presentation-ready',
   shutdown: 'scene:shutdown',
   loadProgress: 'scene:load-progress',
   loadError: 'scene:load-error',
@@ -74,16 +77,27 @@ export const SceneBridgeEvents = {
 
 export function notifySceneReady(): void {
   ready = true;
+  presentationReady = false;
   emitter.emit(SceneBridgeEvents.ready);
+}
+
+export function notifyScenePresentationReady(): void {
+  if (!ready || presentationReady) return;
+  presentationReady = true;
+  emitter.emit(SceneBridgeEvents.presentationReady);
 }
 
 export function notifySceneShutdown(): void {
   ready = false;
+  presentationReady = false;
+  latestSceneState = null;
   emitter.emit(SceneBridgeEvents.shutdown);
 }
 
 export function resetSceneBridge(): void {
   ready = false;
+  presentationReady = false;
+  latestSceneState = null;
   emitter.clear();
 }
 
@@ -101,6 +115,21 @@ export function onSceneReady(handler: () => void, context?: unknown): void {
 
 export function offSceneReady(handler: () => void, context?: unknown): void {
   emitter.off(SceneBridgeEvents.ready, handler, context);
+}
+
+export function onScenePresentationReady(
+  handler: () => void,
+  context?: unknown
+): void {
+  emitter.on(SceneBridgeEvents.presentationReady, handler, context);
+  if (presentationReady) handler.call(context);
+}
+
+export function offScenePresentationReady(
+  handler: () => void,
+  context?: unknown
+): void {
+  emitter.off(SceneBridgeEvents.presentationReady, handler, context);
 }
 
 export function onSceneShutdown(handler: () => void, context?: unknown): void {
@@ -184,6 +213,7 @@ export function onSceneSync(
   context?: unknown
 ): void {
   emitter.on(SceneBridgeEvents.sync, handler, context);
+  if (latestSceneState) handler.call(context, structuredClone(latestSceneState));
 }
 
 export function offSceneSync(
@@ -221,8 +251,10 @@ export async function presentSceneCue(cue: PresentationCue): Promise<void> {
 }
 
 export async function syncSceneState(state: GameState): Promise<void> {
+  latestSceneState = structuredClone(state);
   await waitForSceneReady();
-  emitter.emit(SceneBridgeEvents.sync, structuredClone(state));
+  if (!ready || !latestSceneState) return;
+  emitter.emit(SceneBridgeEvents.sync, structuredClone(latestSceneState));
 }
 
 function waitForSceneReady(): Promise<void> {

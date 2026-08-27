@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { createTechnicalSliceState, type GameState } from '@bigmoney/game-core';
-import type { TechnicalSliceSessionSnapshot } from '@bigmoney/game-flow';
+import { fullMap36Content } from '@bigmoney/game-content';
+import { createLocalGameState, type GameState } from '@bigmoney/game-core';
+import type { LocalGameSessionSnapshot } from '@bigmoney/game-flow';
 import { renderBrowserTestGameText } from './browserTestProjection';
 
 describe('browser test state projection', () => {
   it('reads the canonical liquidation payment details without mutating state', () => {
-    const game = createTechnicalSliceState();
+    const game = createLocalGameState(fullMap36Content);
     game.activePlayerIndex = 1;
     game.pendingInteraction = {
       type: 'LIQUIDATION',
@@ -16,15 +17,20 @@ describe('browser test state projection', () => {
         receiverId: 'P1',
         amount: 75,
         reason: 'RENT',
-        propertyId: 'A1'
+        propertyId: 'HARBOR_01'
       }
     };
     const before = structuredClone(game);
 
     expect(JSON.parse(renderBrowserTestGameText(snapshot(game), false))).toMatchObject({
       flow: 'awaitingLiquidation',
+      boardVersion: 'full-map-36-v1',
+      tileCount: 36,
       activePlayerId: 'P2',
       activePlayerIndex: 1,
+      activePlayerPosition: 0,
+      currentTileId: 'START',
+      currentTileType: 'START',
       playerCount: 2,
       round: 1,
       domainRevision: 0,
@@ -42,7 +48,7 @@ describe('browser test state projection', () => {
   });
 
   it('projects only the current public event resolution details', () => {
-    const game = createTechnicalSliceState(4);
+    const game = createLocalGameState(fullMap36Content, 4);
     const snapshotWithEvent = snapshot(game, 'awaitingResult');
     snapshotWithEvent.lastEvents = [{
       type: 'EVENT_RESOLVED',
@@ -69,7 +75,7 @@ describe('browser test state projection', () => {
   });
 
   it('redacts private player and asset data during handoff', () => {
-    const game = createTechnicalSliceState();
+    const game = createLocalGameState(fullMap36Content);
     game.players[0]!.cards.push({ instanceId: 'CARD-0001', cardId: 'CARD_REROLL' });
     game.players[0]!.stocks.push({
       holdingId: 'STOCK-0001',
@@ -90,8 +96,8 @@ describe('browser test state projection', () => {
 
 function snapshot(
   game: GameState,
-  flow: TechnicalSliceSessionSnapshot['flow'] = 'awaitingLiquidation'
-): TechnicalSliceSessionSnapshot {
+  flow: LocalGameSessionSnapshot['flow'] = 'awaitingLiquidation'
+): LocalGameSessionSnapshot {
   return {
     flow,
     game,

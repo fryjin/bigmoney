@@ -1,24 +1,29 @@
 import type { GameState } from '@bigmoney/game-core';
 import {
-  TechnicalSliceSession,
+  LocalGameSession,
+  type LocalGameContent,
+  type LocalGameSessionSnapshot,
   type FlowPhase,
-  type StableFlowPhase,
-  type TechnicalSliceSessionSnapshot
+  type StableFlowPhase
 } from '@bigmoney/game-flow';
 import type { RandomProvider } from '@bigmoney/game-random';
 
-export interface TechnicalSliceSessionSeed {
+export interface LocalGameSessionSeed {
   random: RandomProvider;
+  content: LocalGameContent;
   game: GameState;
   flow: StableFlowPhase;
 }
 
-type SnapshotListener = (snapshot: TechnicalSliceSessionSnapshot) => void;
+/** @deprecated Historical technical-slice compatibility alias. */
+export type TechnicalSliceSessionSeed = LocalGameSessionSeed;
+
+type SnapshotListener = (snapshot: LocalGameSessionSnapshot) => void;
 type StorageFailureListener = (error: unknown) => void;
 
-export interface TechnicalSliceSessionLifecycle {
-  start(seed: TechnicalSliceSessionSeed): TechnicalSliceSession;
-  getSession(): TechnicalSliceSession | null;
+export interface LocalGameSessionLifecycle {
+  start(seed: LocalGameSessionSeed): LocalGameSession;
+  getSession(): LocalGameSession | null;
   getGeneration(): number;
   enqueueForActiveSession(
     operation: () => Promise<void>,
@@ -29,10 +34,13 @@ export interface TechnicalSliceSessionLifecycle {
   dispose(): void;
 }
 
-export function createTechnicalSliceSessionLifecycle(
+/** @deprecated Historical technical-slice compatibility alias. */
+export type TechnicalSliceSessionLifecycle = LocalGameSessionLifecycle;
+
+export function createLocalGameSessionLifecycle(
   onSnapshot: SnapshotListener
-): TechnicalSliceSessionLifecycle {
-  let session: TechnicalSliceSession | null = null;
+): LocalGameSessionLifecycle {
+  let session: LocalGameSession | null = null;
   let unsubscribe: (() => void) | null = null;
   let generation = 0;
   let saveQueue = Promise.resolve();
@@ -48,8 +56,9 @@ export function createTechnicalSliceSessionLifecycle(
   return {
     start(seed) {
       retire();
-      const nextSession = new TechnicalSliceSession(
+      const nextSession = new LocalGameSession(
         seed.random,
+        seed.content,
         seed.game,
         seed.flow
       );
@@ -104,6 +113,9 @@ export function createTechnicalSliceSessionLifecycle(
     }
   };
 }
+
+/** @deprecated Historical technical-slice compatibility alias. */
+export const createTechnicalSliceSessionLifecycle = createLocalGameSessionLifecycle;
 
 export function isPrivateInfoHidden(
   flow: FlowPhase | null,
