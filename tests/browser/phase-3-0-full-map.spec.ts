@@ -295,18 +295,19 @@ test.describe('Phase 3.0 full-map production browser acceptance', () => {
     expect(runtimeIssues).toEqual([]);
   });
 
-  test('restart overwrites a v4 four-player save with two formal pawns and no ghost roster', async ({ page }, testInfo) => {
+  test('scene presentation remains ready across fixture navigation and session replacement', async ({ page }, testInfo) => {
     const runtimeIssues = watchRuntime(page);
     await preparePage(page, { width: 1194, height: 834 });
-    await startNewGame(page, 4);
+
+    await visitFixture(page, 'reserved-jail');
+    await visitFixture(page, 'reserved-project');
+    await expect(page.locator('.game-canvas canvas')).toHaveCount(1);
     await waitForStableSave(page, 'turnReady');
 
-    await page.locator('.current-player-card .text-button').click();
-    await expect(page.locator('.new-game-setup')).toBeVisible();
-    await page.locator('.new-game-count').filter({ hasText: '2 人' }).click();
-    await page.locator('.new-game-actions .primary-action').click();
-    await expectFlow(page, 'turnReady');
-    await expect(page.locator('.scene-loading')).toHaveCount(0);
+    await restartSavedGameWithPlayerCount(page, 4);
+    await waitForStableSave(page, 'turnReady');
+
+    await restartActiveGameWithPlayerCount(page, 2);
     const restarted = await readGameText(page);
     expect(restarted.players?.map((candidate) => candidate.id)).toEqual(['P1', 'P2']);
     expect(restarted.properties).toHaveLength(20);
@@ -368,6 +369,26 @@ async function preparePage(
 
 async function startNewGame(page: Page, playerCount: 2 | 3 | 4): Promise<void> {
   await page.goto('/');
+  await expect(page.locator('.new-game-setup')).toBeVisible();
+  await page.locator('.new-game-count').filter({ hasText: `${playerCount} 人` }).click();
+  await page.locator('.new-game-actions .primary-action').click();
+  await expectFlow(page, 'turnReady');
+  await expect(page.locator('.scene-loading')).toHaveCount(0);
+}
+
+async function restartSavedGameWithPlayerCount(page: Page, playerCount: 2 | 3 | 4): Promise<void> {
+  await page.goto('/');
+  await expect(page.locator('.session-entry-card')).toBeVisible();
+  await page.locator('.session-entry-card .secondary-action').click();
+  await selectPlayerCountAndStart(page, playerCount);
+}
+
+async function restartActiveGameWithPlayerCount(page: Page, playerCount: 2 | 3 | 4): Promise<void> {
+  await page.locator('.current-player-card .text-button').click();
+  await selectPlayerCountAndStart(page, playerCount);
+}
+
+async function selectPlayerCountAndStart(page: Page, playerCount: 2 | 3 | 4): Promise<void> {
   await expect(page.locator('.new-game-setup')).toBeVisible();
   await page.locator('.new-game-count').filter({ hasText: `${playerCount} 人` }).click();
   await page.locator('.new-game-actions .primary-action').click();

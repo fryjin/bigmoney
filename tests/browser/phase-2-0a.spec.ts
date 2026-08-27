@@ -193,6 +193,7 @@ test('Scenarios F and H: final bankruptcy enters finished and restores without r
   await expect(page.locator('.session-entry-card')).toBeVisible();
   await page.locator('.session-entry-card .primary-action').click();
   await expectFlow(page, 'finished');
+  await expect(page.locator('.scene-loading')).toHaveCount(0);
 
   const restored = await readGameText(page);
   expect(restored.status).toBe('FINISHED');

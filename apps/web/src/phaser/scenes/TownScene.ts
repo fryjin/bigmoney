@@ -13,6 +13,7 @@ import {
 import {
   completeScenePresentation,
   notifySceneReady,
+  notifyScenePresentationReady,
   notifySceneShutdown,
   getScenePresentationPreferences,
   offScenePreferences,
@@ -737,6 +738,8 @@ export class TownScene extends Phaser.Scene {
       }
       this.ensurePropertyFlag(propertyId, toPhaserDisplayColor(owner.color));
     }
+
+    notifyScenePresentationReady();
   }
 
   private hidePlayerPawns(): void {
