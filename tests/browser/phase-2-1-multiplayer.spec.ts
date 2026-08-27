@@ -154,7 +154,7 @@ test.describe('Phase 2.1 local multiplayer browser regression', () => {
       expect(finished.winnerId).toBe('P3');
       await expect(page.locator('.dice-button')).toHaveCount(0);
 
-      await waitForStableSave();
+      await waitForStableSave(page);
       await page.reload();
       await expect(page.locator('.session-entry-card')).toBeVisible();
       await page.locator('.session-entry-card .primary-action').click();
@@ -174,7 +174,7 @@ test.describe('Phase 2.1 local multiplayer browser regression', () => {
     const runtimeIssues = watchRuntime(page);
     await preparePage(page, { width: 1194, height: 834 });
     await startNewGame(page, 4);
-    await waitForStableSave();
+    await waitForStableSave(page);
 
     await page.locator('.current-player-card .text-button').click();
     await expect(page.locator('.new-game-setup')).toBeVisible();
@@ -192,7 +192,7 @@ test.describe('Phase 2.1 local multiplayer browser regression', () => {
       fullPage: false
     });
 
-    await waitForStableSave();
+    await waitForStableSave(page);
     await page.reload();
     await expect(page.locator('.session-entry-card')).toBeVisible();
     await page.locator('.session-entry-card .primary-action').click();
@@ -213,7 +213,7 @@ test.describe('Phase 2.1 local multiplayer browser regression', () => {
       await expectFlow(page, 'awaitingHandoff');
       await expectPrivateProjection(page, 'awaitingHandoff');
 
-      await waitForStableSave();
+      await waitForStableSave(page);
       await page.reload();
       await expect(page.locator('.session-entry-card')).toBeVisible();
       await page.locator('.session-entry-card .primary-action').click();
@@ -252,7 +252,7 @@ test.describe('Phase 2.1 local multiplayer browser regression', () => {
       const paymentId = before.pendingLiquidation?.paymentId;
       expect(paymentId).toBeTruthy();
 
-      await waitForStableSave();
+      await waitForStableSave(page);
       await page.reload();
       await expect(page.locator('.session-entry-card')).toBeVisible();
       await page.locator('.session-entry-card .primary-action').click();
@@ -505,8 +505,25 @@ async function expectPrivateFlow(page: Page, flow: string): Promise<void> {
   }).toBe(true);
 }
 
-async function waitForStableSave(): Promise<void> {
-  await new Promise<void>((resolve) => setTimeout(resolve, 250));
+async function waitForStableSave(page: Page): Promise<void> {
+  const expectedFlow = (await readGameText(page)).flow;
+  await page.waitForFunction(async (flow) => {
+    const database = await new Promise<IDBDatabase | null>((resolve) => {
+      const request = indexedDB.open('bigmoney-local-v1');
+      request.onerror = () => resolve(null);
+      request.onsuccess = () => resolve(request.result);
+    });
+    if (!database) return false;
+
+    const record = await new Promise<{ payload?: { flow?: string } } | undefined>((resolve) => {
+      const transaction = database.transaction('snapshots', 'readonly');
+      const request = transaction.objectStore('snapshots').get('local-game-current');
+      request.onerror = () => resolve(undefined);
+      request.onsuccess = () => resolve(request.result as { payload?: { flow?: string } } | undefined);
+    });
+    database.close();
+    return record?.payload?.flow === flow;
+  }, expectedFlow);
 }
 
 async function readGameText(page: Page): Promise<BrowserGameText> {

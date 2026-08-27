@@ -1,4 +1,5 @@
-import type { TechnicalSliceSessionSnapshot } from '@bigmoney/game-flow';
+import { fullMap36Content } from '@bigmoney/game-content';
+import type { LocalGameSessionSnapshot } from '@bigmoney/game-flow';
 
 declare global {
   interface Window {
@@ -7,7 +8,7 @@ declare global {
 }
 
 export function renderBrowserTestGameText(
-  snapshot: TechnicalSliceSessionSnapshot,
+  snapshot: LocalGameSessionSnapshot,
   privateInfoHidden: boolean
 ): string {
   if (privateInfoHidden) {
@@ -19,6 +20,10 @@ export function renderBrowserTestGameText(
   }
 
   const pending = snapshot.game.pendingInteraction;
+  const activePlayer = snapshot.game.players[snapshot.game.activePlayerIndex] ?? null;
+  const currentTile = activePlayer
+    ? fullMap36Content.tiles[activePlayer.position] ?? null
+    : null;
   const pendingLiquidation =
     pending?.type === 'LIQUIDATION'
       ? {
@@ -42,6 +47,8 @@ export function renderBrowserTestGameText(
   return JSON.stringify({
     flow: snapshot.flow,
     status: snapshot.game.status,
+    boardVersion: snapshot.game.boardVersion,
+    tileCount: fullMap36Content.tiles.length,
     round: snapshot.game.round,
     activePlayerIndex: snapshot.game.activePlayerIndex,
     playerCount: snapshot.game.players.length,
@@ -49,8 +56,28 @@ export function renderBrowserTestGameText(
     lastEventTypes: snapshot.lastEvents.map((event) => event.type),
     eventResolutions,
     winnerId: snapshot.game.winnerId,
-    activePlayerId: snapshot.game.players[snapshot.game.activePlayerIndex]?.id ?? null,
+    activePlayerId: activePlayer?.id ?? null,
+    activePlayerPosition: activePlayer?.position ?? null,
+    currentTileId: currentTile?.id ?? null,
+    currentTileType: currentTile?.type ?? null,
+    currentTileName: currentTile?.name ?? null,
+    currentTileReservedKind:
+      currentTile?.type === 'RESERVED' ? currentTile.reservedKind : null,
+    pendingInteractionType: pending?.type ?? null,
+    pendingMarketId: pending?.type === 'STOCK_MARKET' ? pending.marketId : null,
+    pendingEventId: pending?.type === 'EVENT_RESULT' ? pending.eventId : null,
+    pendingCardId: pending?.type === 'CARD_DRAW' ? pending.card.cardId : null,
+    pendingPropertyId:
+      pending?.type === 'PROPERTY_PURCHASE' || pending?.type === 'PROPERTY_UPGRADE'
+        ? pending.propertyId
+        : null,
     pendingLiquidation,
+    moves: snapshot.lastEvents.flatMap((event) =>
+      event.type === 'PLAYER_MOVED' ? [{ from: event.from, to: event.to }] : []
+    ),
+    lapRewards: snapshot.lastEvents.flatMap((event) =>
+      event.type === 'LAP_REWARD_GRANTED' ? [{ playerId: event.playerId, amount: event.amount }] : []
+    ),
     players: snapshot.game.players.map((player) => ({
       id: player.id,
       cash: player.cash,
