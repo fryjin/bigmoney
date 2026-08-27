@@ -124,7 +124,11 @@ const liquidationCandidates = computed(() => {
   const currentGame = game.value;
   if (!interaction || !currentGame) return [];
 
-  return getLiquidationCandidates(currentGame, interaction.playerId).map((candidate) => ({
+  return getLiquidationCandidates(
+    currentGame,
+    interaction.playerId,
+    sessionContent
+  ).map((candidate) => ({
     ...candidate,
     name:
       sessionContent.properties.find(
@@ -139,7 +143,8 @@ const liquidationQuote = computed(() => {
   return quoteLiquidation(
     game.value,
     interaction.payment.id,
-    selectedLiquidationPropertyIds.value
+    selectedLiquidationPropertyIds.value,
+    sessionContent
   );
 });
 const liquidationReceiver = computed(() => {
