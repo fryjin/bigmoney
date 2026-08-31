@@ -7,8 +7,8 @@
 - 不使用未注入的 `Math.random()`；所有随机结果必须来自 `@bigmoney/game-random`。
 - 不把 Vue 响应式状态或 Phaser GameObject 当作游戏真实状态。
 - 不新增交易、贷款、联网、AI玩家、分支地图等未纳入MVP的系统。
-- Phase 3.0 只在当前任务书定义的边界内扩展 36 格正式地图与内容；不得自行补齐任务书之外的规则、系统或正式美术。
-- 从 Phase 2.0 起，任何强制付款、清算或破产改动必须先阅读当前阶段任务书；当前为 `CODEX_TASK_PHASE_3_0.md`。
+- Phase 3.1 只在当前任务书定义的边界内激活 36 格正式地图中的公共设施；不得自行补齐任务书之外的规则、系统或正式美术。
+- 从 Phase 2.0 起，任何强制付款、清算或破产改动必须先阅读当前阶段任务书；当前为 `CODEX_TASK_PHASE_3_1.md`。
 
 ## 强制数据流
 
@@ -63,7 +63,7 @@ UI/场景输入
 ## Codex 本地开发
 
 - 本地 Codex 起点：`CODEX_START_HERE.md`。
-- 当前阶段任务边界：`CODEX_TASK_PHASE_3_0.md`。
+- 当前阶段任务边界：`CODEX_TASK_PHASE_3_1.md`。
 - 首次进入仓库执行：`npm run codex:preflight`。
 
 ## 项目级 External Game Skills 路由
@@ -72,7 +72,7 @@ UI/场景输入
 
 - `docs/rules-baseline.md` 定义冻结的产品规则；当前阶段任务书定义本轮实施范围；
   `AGENTS.md` 定义工程架构、数据流和实施边界。外部 Skill 始终低于以上项目级约束。
-- 当前 `CODEX_TASK_PHASE_3_0.md` 的阶段合同始终高于外部 Skill 建议。
+- 当前 `CODEX_TASK_PHASE_3_1.md` 的阶段合同始终高于外部 Skill 建议。
 - `CODEX_SKILLS_SETUP.md` 是本项目的 Skill 配置，记录来源、适用范围和兼容性规则；调用
   外部 Skill 前必须先阅读它。
 - 只有任务匹配时才调用对应 Skill，不要求每轮加载全部六个 Skill。
