@@ -1,5 +1,10 @@
 import Phaser from 'phaser';
-import type { DomainEvent, GameState, PlayerId } from '@bigmoney/game-core';
+import {
+  formatInternalMoney,
+  type DomainEvent,
+  type GameState,
+  type PlayerId
+} from '@bigmoney/game-core';
 import type { PresentationCue } from '@bigmoney/game-flow';
 import {
   getPresentationProfile,
@@ -646,16 +651,27 @@ export class TownScene extends Phaser.Scene {
   }
 
   private async playDestination(events: DomainEvent[]): Promise<void> {
-    const rent = events.find((event) => event.type === 'RENT_PAID');
-    if (!rent || rent.type !== 'RENT_PAID') return;
+    const rent = events.find(
+      (event): event is Extract<DomainEvent, { type: 'RENT_PAID' }> =>
+        event.type === 'RENT_PAID'
+    );
+    const publicFee = events.find(
+      (event): event is Extract<DomainEvent, { type: 'PAYMENT_COMPLETED' }> =>
+        event.type === 'PAYMENT_COMPLETED' && event.payment.reason === 'PUBLIC_FEE'
+    );
+    if (!rent && !publicFee) return;
 
-    const payer = this.pawns.get(rent.payerId);
+    const payer = this.pawns.get(rent?.payerId ?? publicFee!.payment.payerId);
     if (!payer) return;
-    const text = this.add.text(payer.x, payer.y - 100, `-${rent.amount * 10}万`, {
+    const amountText = rent
+      ? `-${rent.amount * 10}万`
+      : `公共费用\n-${formatInternalMoney(publicFee!.payment.amount)}`;
+    const text = this.add.text(payer.x, payer.y - 100, amountText, {
       fontFamily: 'Inter, sans-serif',
       fontSize: '22px',
       fontStyle: 'bold',
       color: '#C55353',
+      align: 'center',
       stroke: '#FFFFFF',
       strokeThickness: 5
     }).setOrigin(0.5).setDepth(1100);

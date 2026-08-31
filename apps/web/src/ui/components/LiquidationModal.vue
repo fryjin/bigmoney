@@ -16,6 +16,7 @@ const props = defineProps<{
   payment: ForcedPayment;
   payerName: string;
   receiverName: string | null;
+  sourceText: string;
   candidates: LiquidationPropertyOption[];
   selectedPropertyIds: string[];
   quote: LiquidationQuote;
@@ -31,11 +32,6 @@ function isSelected(propertyId: string): boolean {
   return props.selectedPropertyIds.includes(propertyId);
 }
 
-function paymentReason(reason: ForcedPayment['reason']): string {
-  if (reason === 'RENT') return '地产租金';
-  if (reason === 'EVENT_EXPENSE') return '城市费用';
-  return '公共费用';
-}
 </script>
 
 <template>
@@ -43,14 +39,14 @@ function paymentReason(reason: ForcedPayment['reason']): string {
     <span class="eyebrow">资金不足 · Liquidation</span>
     <h2 id="liquidation-title">需要支付</h2>
     <p class="modal-lead">
-      {{ payerName }} 需要处理{{ paymentReason(payment.reason) }}。
+      {{ payerName }} 需要处理{{ sourceText }}。
       <template v-if="receiverName">收款方：{{ receiverName }}。</template>
     </p>
 
     <dl class="liquidation-summary">
       <div>
         <dt>应付金额</dt>
-        <dd>{{ formatInternalMoney(quote.amountDue) }}</dd>
+        <dd>{{ formatInternalMoney(payment.amount) }}</dd>
       </div>
       <div>
         <dt>当前现金</dt>

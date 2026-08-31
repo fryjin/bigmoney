@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { formatInternalMoney } from '@bigmoney/game-core';
 import { fullMap36Content } from '@bigmoney/game-content';
 import { getCurrentTilePresentation } from './currentTilePresentation';
 
@@ -11,6 +12,7 @@ describe('current full-map tile presentation', () => {
       `第 ${position + 1} / 36 格 · ${tile.name}`
     );
     expect(presentation.positionText).not.toContain('800');
+    expect(presentation.detailText).toBeNull();
   });
 
   it.each([
@@ -35,7 +37,8 @@ describe('current full-map tile presentation', () => {
       expect(presentation.availability).toBe('暂未开放');
       expect(presentation).toEqual({
         positionText: `第 ${position + 1} / 36 格 · ${name}`,
-        availability: '暂未开放'
+        availability: '暂未开放',
+        detailText: null
       });
     }
   );
@@ -50,10 +53,14 @@ describe('current full-map tile presentation', () => {
       const presentation = getCurrentTilePresentation(fullMap36Content, position);
 
       expect(tile.type).toBe('FACILITY');
+      if (tile.type !== 'FACILITY') {
+        throw new Error(`Expected FACILITY tile at canonical index ${position}.`);
+      }
       expect(tile.name).toBe(name);
       expect(presentation).toEqual({
         positionText: `第 ${position + 1} / 36 格 · ${name}`,
-        availability: null
+        availability: null,
+        detailText: `公共设施费用 · ${formatInternalMoney(tile.fee)}`
       });
     }
   );
@@ -69,6 +76,7 @@ describe('current full-map tile presentation', () => {
         `第 ${position + 1} / 36 格 · ${tile.name}`
       );
       expect(presentation.availability).toBeNull();
+      expect(presentation.detailText).toBeNull();
     }
   );
 });

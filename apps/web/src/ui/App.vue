@@ -48,6 +48,10 @@ import type { BrowserTestFixture } from '../session/browserTestFixtures';
 import { renderBrowserTestGameText } from '../session/browserTestProjection';
 import { CURRENT_GAME_CONTENT } from '../session/currentGameContent';
 import { getCurrentTilePresentation } from './currentTilePresentation';
+import {
+  getCompletedPublicFeePresentation,
+  getPaymentPresentation
+} from '../presentation/paymentPresentation';
 
 const props = defineProps<{
   initialLoad: LocalGameLoadResult;
@@ -151,6 +155,10 @@ const liquidationReceiver = computed(() => {
   const receiverId = liquidationInteraction.value?.payment.receiverId;
   if (!receiverId || !game.value) return null;
   return game.value.players.find((player) => player.id === receiverId) ?? null;
+});
+const liquidationPaymentPresentation = computed(() => {
+  const payment = liquidationInteraction.value?.payment;
+  return payment ? getPaymentPresentation(sessionContent, payment) : null;
 });
 const activePlayerId = computed<string | null>(() =>
   activePlayer.value?.bankrupt ? null : activePlayer.value?.id ?? null
@@ -273,6 +281,14 @@ const statusMessage = computed(() => {
   if (presentingFinished.value) return '正在呈现最终结果';
   if (snapshot.value?.flow === 'finished') return '游戏已结束';
 
+  const publicFeePresentation = getCompletedPublicFeePresentation(
+    sessionContent,
+    snapshot.value?.lastEvents ?? []
+  );
+  if (publicFeePresentation) {
+    return publicFeePresentation.completionText ?? '公共费用来源无效';
+  }
+
   const last = snapshot.value?.lastEvents.at(-1);
   if (last?.type === 'DICE_ROLLED' && activePlayer.value) {
     return `${activePlayer.value.name} 掷出 ${last.value} 点`;
@@ -291,17 +307,19 @@ const statusMessage = computed(() => {
   return '点击投骰，开始本回合';
 });
 
-const currentTilePosition = computed(() => {
-  if (!activePlayer.value) return '未知地格';
-  return getCurrentTilePresentation(
-    sessionContent,
-    activePlayer.value.position
-  ).positionText;
-});
-const currentTileAvailability = computed(() =>
+const currentTilePresentation = computed(() =>
   activePlayer.value
-    ? getCurrentTilePresentation(sessionContent, activePlayer.value.position).availability
+    ? getCurrentTilePresentation(sessionContent, activePlayer.value.position)
     : null
+);
+const currentTilePosition = computed(
+  () => currentTilePresentation.value?.positionText ?? '未知地格'
+);
+const currentTileAvailability = computed(
+  () => currentTilePresentation.value?.availability ?? null
+);
+const currentTileDetail = computed(
+  () => currentTilePresentation.value?.detailText ?? null
 );
 
 const savedAtText = computed(() => {
@@ -771,6 +789,7 @@ if (initialSession) {
         <div><dt>余额</dt><dd>{{ activePlayer.cash * 10 }}万元</dd></div>
         <div><dt>位置</dt><dd>{{ currentTilePosition }}</dd></div>
         <div v-if="currentTileAvailability"><dt>地格状态</dt><dd>{{ currentTileAvailability }}</dd></div>
+        <div v-if="currentTileDetail"><dt>地格信息</dt><dd>{{ currentTileDetail }}</dd></div>
         <div><dt>进度</dt><dd>第 {{ game.round }} 大轮</dd></div>
       </dl>
       <button class="text-button" type="button" @click="resetLocalGame">重新开始</button>
@@ -1019,6 +1038,7 @@ if (initialSession) {
         :payment="liquidationInteraction.payment"
         :payer-name="activePlayer.name"
         :receiver-name="liquidationReceiver?.name ?? null"
+        :source-text="liquidationPaymentPresentation?.sourceText ?? '未知费用来源'"
         :candidates="liquidationCandidates"
         :selected-property-ids="selectedLiquidationPropertyIds"
         :quote="liquidationQuote"

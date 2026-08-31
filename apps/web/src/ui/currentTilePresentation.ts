@@ -2,12 +2,14 @@ import type {
   GameContent,
   TechnicalSliceContent
 } from '@bigmoney/game-content';
+import { formatInternalMoney } from '@bigmoney/game-core';
 
 type BoardContent = GameContent | TechnicalSliceContent;
 
 export interface CurrentTilePresentation {
   positionText: string;
   availability: string | null;
+  detailText: string | null;
 }
 
 export function getCurrentTilePresentation(
@@ -19,6 +21,10 @@ export function getCurrentTilePresentation(
 
   return {
     positionText: `第 ${position + 1} / ${content.tiles.length} 格 · ${name}`,
-    availability: tile?.type === 'RESERVED' ? '暂未开放' : null
+    availability: tile?.type === 'RESERVED' ? '暂未开放' : null,
+    detailText:
+      tile?.type === 'FACILITY'
+        ? `公共设施费用 · ${formatInternalMoney(tile.fee)}`
+        : null
   };
 }
