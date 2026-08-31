@@ -3,6 +3,7 @@ import {
   createLocalGameState,
   createTechnicalSliceState,
   executeCommand,
+  type ForcedPayment,
   type GameState,
   type PendingInteraction
 } from '@bigmoney/game-core';
@@ -564,6 +565,80 @@ describe('local game persistence schema v4', () => {
   });
 
   it.each([
+    ['missing tileId', (payment: Record<string, unknown>) => { delete payment.tileId; }],
+    ['unknown tile', (payment: Record<string, unknown>) => { payment.tileId = 'UNKNOWN_TILE'; }],
+    ['property tile', (payment: Record<string, unknown>) => {
+      payment.tileId = 'PROPERTY_HARBOR_01';
+    }],
+    ['reserved tile', (payment: Record<string, unknown>) => { payment.tileId = 'RESERVED_JAIL'; }],
+    ['event tile', (payment: Record<string, unknown>) => { payment.tileId = 'EVENT_01'; }],
+    ['wrong facility fee', (payment: Record<string, unknown>) => { payment.amount = 31; }],
+    ['non-null receiver', (payment: Record<string, unknown>) => { payment.receiverId = 'P2'; }]
+  ])('quarantines PUBLIC_FEE liquidation with %s', async (_name, mutate) => {
+    const invalid = await createPublicFeeLiquidationSave();
+    mutate(requirePublicFeeLiquidation(invalid.game).payment as unknown as Record<string, unknown>);
+    await saveSnapshot(LOCAL_GAME_SAVE_SLOT, recomputeIntegrityV4(invalid));
+
+    await expectLocalRecoveredAndQuarantined();
+  });
+
+  it.each([
+    [14, 'RESERVED_FACILITY_01', 30],
+    [25, 'RESERVED_FACILITY_02', 50]
+  ] as const)(
+    'round-trips PUBLIC_FEE liquidation at facility index %i without changing the canonical debt',
+    async (facilityIndex, tileId, amount) => {
+      const state = createPublicFeeLiquidationState(facilityIndex);
+      const payment = requirePublicFeeLiquidation(state).payment;
+      const random = new SeededRandom(97 + facilityIndex).getSnapshot();
+
+      await saveLocalGameSave(fullMap36Content, state, random, 'awaitingLiquidation');
+      const loaded = await loadLocalGameSave(fullMap36Content);
+
+      expect(loaded).toMatchObject({ status: 'ready', save: { flow: 'awaitingLiquidation' } });
+      expect(loaded.save?.game).toEqual(state);
+      expect(loaded.save?.random).toEqual(random);
+      expect(requirePublicFeeLiquidation(loaded.save!.game).payment).toEqual(payment);
+      expect(payment).toEqual({
+        id: 'PAYMENT-0001',
+        payerId: 'P1',
+        receiverId: null,
+        amount,
+        reason: 'PUBLIC_FEE',
+        tileId
+      });
+    }
+  );
+
+  it.each([14, 25] as const)(
+    'does not retrospectively charge a v4 turn-ready save already at facility index %i',
+    async (facilityIndex) => {
+      const state = createLocalGameState(fullMap36Content, 2);
+      state.players[0]!.position = facilityIndex;
+      state.players[0]!.cash = 321;
+      const beforeSave = structuredClone(state);
+
+      await saveLocalGameSave(
+        fullMap36Content,
+        state,
+        new SeededRandom(131 + facilityIndex).getSnapshot(),
+        'turnReady'
+      );
+      const loaded = await loadLocalGameSave(fullMap36Content);
+
+      expect(loaded).toMatchObject({ status: 'ready', save: { flow: 'turnReady' } });
+      expect(loaded.save?.game).toEqual(beforeSave);
+      expect(loaded.save?.game.players[0]).toMatchObject({
+        position: facilityIndex,
+        cash: 321
+      });
+      expect(loaded.save?.game.pendingInteraction).toBeNull();
+      expect(loaded.save?.game.turn).toEqual(beforeSave.turn);
+      expect(loaded.save?.game.nextInstanceSequence).toBe(beforeSave.nextInstanceSequence);
+    }
+  );
+
+  it.each([
     ['unknown stock tile', 'tileId', 'UNKNOWN_TILE'],
     ['unknown stock market', 'marketId', 'UNKNOWN_MARKET'],
     ['unknown stock offer', 'offeredStockIds', ['UNKNOWN_STOCK']]
@@ -790,6 +865,42 @@ async function createLocalLiquidationSave(): Promise<LocalGameSave> {
   );
 }
 
+function createPublicFeeLiquidationState(facilityIndex: 14 | 25): GameState {
+  const state = createLocalGameState(fullMap36Content, 2);
+  state.players[0]!.position = facilityIndex - 1;
+  state.players[0]!.cash = 10;
+  state.properties.HARBOR_01 = { id: 'HARBOR_01', ownerId: 'P1', level: 0 };
+  const random = new SequenceRandom([1]);
+  const rolled = executeCommand(
+    state,
+    { type: 'ROLL_DICE', playerId: 'P1' },
+    random,
+    fullMap36Content
+  ).nextState;
+  const moved = executeCommand(
+    rolled,
+    { type: 'MOVE_ONE_STEP', playerId: 'P1' },
+    random,
+    fullMap36Content
+  ).nextState;
+
+  return executeCommand(
+    moved,
+    { type: 'RESOLVE_DESTINATION', playerId: 'P1' },
+    random,
+    fullMap36Content
+  ).nextState;
+}
+
+async function createPublicFeeLiquidationSave(): Promise<LocalGameSave> {
+  return saveLocalGameSave(
+    fullMap36Content,
+    createPublicFeeLiquidationState(14),
+    new SeededRandom(101).getSnapshot(),
+    'awaitingLiquidation'
+  );
+}
+
 function createLegacyGame(state: GameState): Record<string, unknown> {
   const { status: _status, winnerId: _winnerId, ...legacy } = state;
   return structuredClone(legacy) as Record<string, unknown>;
@@ -830,6 +941,20 @@ function requireLiquidation(game: GameState): Extract<PendingInteraction, { type
     throw new Error('Expected a liquidation interaction.');
   }
   return interaction;
+}
+
+function requirePublicFeeLiquidation(
+  game: GameState
+): Extract<PendingInteraction, { type: 'LIQUIDATION' }> & {
+  payment: Extract<ForcedPayment, { reason: 'PUBLIC_FEE' }>;
+} {
+  const interaction = requireLiquidation(game);
+  if (interaction.payment.reason !== 'PUBLIC_FEE') {
+    throw new Error('Expected a public fee liquidation interaction.');
+  }
+  return interaction as Extract<PendingInteraction, { type: 'LIQUIDATION' }> & {
+    payment: Extract<ForcedPayment, { reason: 'PUBLIC_FEE' }>;
+  };
 }
 
 function recomputeIntegrity<T extends { integrity: string }>(save: T): T {

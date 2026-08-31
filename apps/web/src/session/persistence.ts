@@ -1040,7 +1040,14 @@ function validateCanonicalForcedPayment(
     return null;
   }
   if (value.reason === 'PUBLIC_FEE') {
-    return receiverId === null ? null : '公共费用清算债务无效。';
+    if (receiverId !== null || typeof value.tileId !== 'string') {
+      return '公共费用清算债务引用无效。';
+    }
+    const tile = getContentTile(content, value.tileId);
+    if (tile?.type !== 'FACILITY' || value.amount !== tile.fee) {
+      return '公共费用清算债务引用无效。';
+    }
+    return null;
   }
 
   return '清算债务原因无效。';
