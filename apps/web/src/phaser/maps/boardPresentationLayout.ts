@@ -8,6 +8,7 @@ export type BoardTileTone =
   | 'event'
   | 'stock'
   | 'card'
+  | 'facility'
   | 'reserved'
   | 'finish';
 

@@ -16,6 +16,7 @@ type FullMapCandidate = {
     propertyId?: string;
     stockMarketId?: string;
     reservedKind?: string;
+    fee?: number;
   }>;
   properties: Array<{
     id: string;
@@ -141,7 +142,23 @@ describe('full-map-36 canonical content', () => {
     ]);
   });
 
-  it('models the five reserved no-op destinations as metadata', () => {
+  it('defines the two frozen public facilities from canonical tile fees', () => {
+    const content = requireFullMapContent();
+    if (!content) {
+      return;
+    }
+
+    expect(content.tiles.filter((tile) => tile.type === 'FACILITY').map((tile) => [
+      tile.index,
+      tile.name,
+      tile.fee
+    ])).toEqual([
+      [14, '城市服务中心', 30],
+      [25, '中央枢纽', 50]
+    ]);
+  });
+
+  it('keeps the remaining three reserved no-op destinations as metadata', () => {
     const content = requireFullMapContent();
     if (!content) {
       return;
@@ -149,11 +166,32 @@ describe('full-map-36 canonical content', () => {
 
     expect(content.tiles.filter((tile) => tile.type === 'RESERVED').map((tile) => [tile.index, tile.reservedKind])).toEqual([
       [9, 'JAIL'],
-      [14, 'FACILITY'],
       [18, 'PROJECT'],
-      [25, 'FACILITY'],
       [27, 'MINIGAME']
     ]);
+  });
+
+  it('keeps the frozen full-map tile type counts', () => {
+    const content = requireFullMapContent();
+    if (!content) {
+      return;
+    }
+
+    expect(Object.fromEntries(
+      ['PROPERTY', 'EVENT', 'CARD', 'STOCK', 'FACILITY', 'RESERVED', 'START', 'FINISH'].map((type) => [
+        type,
+        content.tiles.filter((tile) => tile.type === type).length
+      ])
+    )).toEqual({
+      PROPERTY: 20,
+      EVENT: 4,
+      CARD: 3,
+      STOCK: 2,
+      FACILITY: 2,
+      RESERVED: 3,
+      START: 1,
+      FINISH: 1
+    });
   });
 });
 
@@ -201,6 +239,57 @@ describe('full-map-36 schema integrity', () => {
     const invalidReserved = cloneFullMap(content);
     invalidReserved.tiles[9]!.reservedKind = 'MUSEUM';
     expect(schema.safeParse(invalidReserved).success).toBe(false);
+  });
+
+  it.each([0, -1, 1.5])('rejects a facility fee of %s', (fee) => {
+    const content = requireFullMapContent();
+    const schema = requireFullMapSchema();
+    if (!content || !schema) {
+      return;
+    }
+
+    const invalid = cloneFullMap(content);
+    invalid.tiles[14] = {
+      id: 'RESERVED_FACILITY_01',
+      index: 14,
+      type: 'FACILITY',
+      name: '城市服务中心',
+      fee
+    };
+
+    expect(schema.safeParse(invalid).success).toBe(false);
+  });
+
+  it('rejects facility-only metadata violations', () => {
+    const content = requireFullMapContent();
+    const schema = requireFullMapSchema();
+    if (!content || !schema) {
+      return;
+    }
+
+    const invalid = cloneFullMap(content);
+    invalid.tiles[14] = {
+      id: 'RESERVED_FACILITY_01',
+      index: 14,
+      type: 'FACILITY',
+      name: '城市服务中心',
+      fee: 30,
+      reservedKind: 'JAIL'
+    };
+
+    expect(schema.safeParse(invalid).success).toBe(false);
+
+    const invalidPropertyMetadata = cloneFullMap(content);
+    invalidPropertyMetadata.tiles[14] = {
+      id: 'RESERVED_FACILITY_01',
+      index: 14,
+      type: 'FACILITY',
+      name: '城市服务中心',
+      fee: 30,
+      propertyId: 'HARBOR_01'
+    };
+
+    expect(schema.safeParse(invalidPropertyMetadata).success).toBe(false);
   });
 
   it('rejects an invalid full-map topology', () => {

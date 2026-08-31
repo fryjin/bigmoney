@@ -35,6 +35,7 @@ export type ForcedPayment =
   | (ForcedPaymentBase & {
       receiverId: null;
       reason: 'PUBLIC_FEE';
+      tileId: TileId;
     });
 
 export interface LiquidationCandidate {

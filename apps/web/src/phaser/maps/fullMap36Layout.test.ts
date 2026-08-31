@@ -77,13 +77,13 @@ describe('full-map 36 presentation layout', () => {
     expect(tones.filter((tone) => tone === 'stock')).toHaveLength(2);
     expect(tones.filter((tone) => tone === 'card')).toHaveLength(3);
     expect(tones.filter((tone) => tone === 'event')).toHaveLength(4);
-    expect([9, 14, 18, 25, 27].map((index) => fullMap36PresentationLayout.nodes[index]!.tone)).toEqual([
-      'reserved',
-      'reserved',
+    expect([9, 18, 27].map((index) => fullMap36PresentationLayout.nodes[index]!.tone)).toEqual([
       'reserved',
       'reserved',
       'reserved'
     ]);
+    expect(fullMap36PresentationLayout.nodes[14]!.tone).toBe('facility');
+    expect(fullMap36PresentationLayout.nodes[25]!.tone).toBe('facility');
     expect(fullMap36PresentationLayout.nodes[0]!.tone).toBe('start');
     expect(fullMap36PresentationLayout.nodes[35]!.tone).toBe('finish');
   });

@@ -25,6 +25,7 @@ import {
 } from '../bridges/sceneBridge';
 import {
   getBoardPresentationLayout,
+  type BoardTileTone,
   type BoardPresentationLayout,
   type PropertyPresentationAnchor
 } from '../maps/boardPresentationLayout';
@@ -211,12 +212,13 @@ export class TownScene extends Phaser.Scene {
   }
 
   private drawTiles(layout: BoardPresentationLayout): void {
-    const tones: Record<string, number> = {
+    const tones: Record<BoardTileTone, number> = {
       start: 0xcfe7dd,
       property: 0xf5f0e2,
       event: 0xf5d7ce,
       stock: 0xd5e5f1,
       card: 0xf4e6ae,
+      facility: 0xd8e6cc,
       reserved: 0xd9d8d1,
       finish: 0xc9d8df
     };

@@ -127,8 +127,8 @@ describe('full-map-36 movement and destinations', () => {
     }
   });
 
-  it('treats every reserved tile as a cash-neutral ready-to-end no-op', () => {
-    for (const reservedIndex of [9, 14, 18, 25, 27]) {
+  it('treats every remaining reserved tile as a cash-neutral ready-to-end no-op', () => {
+    for (const reservedIndex of [9, 18, 27]) {
       const state = createFullMapState();
       state.players[0]!.position = reservedIndex - 1;
 

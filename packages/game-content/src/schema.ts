@@ -4,7 +4,7 @@ export const FULL_MAP_36_BOARD_VERSION = 'full-map-36-v1';
 
 const cardRaritySchema = z.enum(['COMMON', 'RARE', 'EPIC']);
 const cardTypeSchema = z.enum(['ATTACK', 'DEFENSE', 'BUFF']);
-const reservedKindSchema = z.enum(['JAIL', 'FACILITY', 'PROJECT', 'MINIGAME']);
+const reservedKindSchema = z.enum(['JAIL', 'PROJECT', 'MINIGAME']);
 
 const tileBaseShape = {
   id: z.string().min(1),
@@ -18,6 +18,7 @@ const tileDefinitionSchema = z.discriminatedUnion('type', [
   z.object({ ...tileBaseShape, type: z.literal('EVENT') }).strict(),
   z.object({ ...tileBaseShape, type: z.literal('STOCK'), stockMarketId: z.string().min(1) }).strict(),
   z.object({ ...tileBaseShape, type: z.literal('CARD') }).strict(),
+  z.object({ ...tileBaseShape, type: z.literal('FACILITY'), fee: z.number().int().positive() }).strict(),
   z.object({ ...tileBaseShape, type: z.literal('FINISH') }).strict(),
   z.object({ ...tileBaseShape, type: z.literal('RESERVED'), reservedKind: reservedKindSchema }).strict()
 ]);
@@ -153,7 +154,8 @@ export const fullMap36ContentSchema = gameContentStructureSchema.extend({
     EVENT: 4,
     STOCK: 2,
     CARD: 3,
-    RESERVED: 5,
+    FACILITY: 2,
+    RESERVED: 3,
     FINISH: 1
   } as const;
 

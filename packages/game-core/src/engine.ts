@@ -490,6 +490,23 @@ function resolveDestination(
     }
   }
 
+  if (tile.type === 'FACILITY') {
+    requestForcedPayment(
+      nextState,
+      {
+        id: createInstanceId(nextState, 'PAYMENT'),
+        payerId: playerId,
+        receiverId: null,
+        amount: tile.fee,
+        reason: 'PUBLIC_FEE',
+        tileId: tile.id
+      },
+      content,
+      events
+    );
+    return { nextState, events };
+  }
+
   if (tile.type === 'EVENT') {
     const eventDefinition = pickOne(content.events, random);
     if (eventDefinition.kind === 'PERSONAL_EXPENSE') {
