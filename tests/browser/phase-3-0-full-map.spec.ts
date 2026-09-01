@@ -93,6 +93,7 @@ test.describe('Phase 3.0 full-map production browser acceptance', () => {
     expect(moved.currentTileId).toBe('PROPERTY_HARBOR_01');
     expect(moved.currentTileType).toBe('PROPERTY');
     expect(moved.pendingPropertyId).toBe('HARBOR_01');
+    await expect(page.locator('.current-player-card')).not.toContainText('公共设施费用');
     expect(runtimeIssues).toEqual([]);
   });
 
@@ -107,6 +108,7 @@ test.describe('Phase 3.0 full-map production browser acceptance', () => {
     expect(player(finish, 'P1')).toMatchObject({ cash: 500, position: 35 });
     expect(finish.currentTileId).toBe('FINISH');
     await expect(page.locator('.current-player-card')).toContainText('第 36 / 36 格 · 城市终点');
+    await expect(page.locator('.current-player-card')).not.toContainText('公共设施费用');
     expect(runtimeIssues).toEqual([]);
   });
 
@@ -135,9 +137,7 @@ test.describe('Phase 3.0 full-map production browser acceptance', () => {
 
   for (const [fixture, index, tileId, reservedKind, name] of [
     ['reserved-jail', 9, 'RESERVED_JAIL', 'JAIL', '城市拘留所'],
-    ['reserved-facility-01', 14, 'RESERVED_FACILITY_01', 'FACILITY', '城市服务中心'],
     ['reserved-project', 18, 'RESERVED_PROJECT', 'PROJECT', '合作开发区'],
-    ['reserved-facility-02', 25, 'RESERVED_FACILITY_02', 'FACILITY', '中央枢纽'],
     ['reserved-minigame', 27, 'RESERVED_MINIGAME', 'MINIGAME', '城市挑战场']
   ] as const) {
     test(`RESERVED index ${index} is a no-op destination through the UI`, async ({ page }) => {

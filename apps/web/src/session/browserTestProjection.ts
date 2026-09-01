@@ -1,3 +1,4 @@
+import type { ForcedPayment } from '@bigmoney/game-core';
 import { fullMap36Content } from '@bigmoney/game-content';
 import type { LocalGameSessionSnapshot } from '@bigmoney/game-flow';
 
@@ -26,14 +27,11 @@ export function renderBrowserTestGameText(
     : null;
   const pendingLiquidation =
     pending?.type === 'LIQUIDATION'
-      ? {
-          paymentId: pending.payment.id,
-          payerId: pending.payment.payerId,
-          receiverId: pending.payment.receiverId,
-          amount: pending.payment.amount,
-          reason: pending.payment.reason
-        }
+      ? projectPayment(pending.payment)
       : null;
+  const completedPayments = snapshot.lastEvents.flatMap((event) =>
+    event.type === 'PAYMENT_COMPLETED' ? [projectPayment(event.payment)] : []
+  );
   const eventResolutions = snapshot.lastEvents.flatMap((event) =>
     event.type === 'EVENT_RESOLVED'
       ? [{
@@ -70,8 +68,9 @@ export function renderBrowserTestGameText(
     pendingPropertyId:
       pending?.type === 'PROPERTY_PURCHASE' || pending?.type === 'PROPERTY_UPGRADE'
         ? pending.propertyId
-        : null,
+      : null,
     pendingLiquidation,
+    completedPayments,
     moves: snapshot.lastEvents.flatMap((event) =>
       event.type === 'PLAYER_MOVED' ? [{ from: event.from, to: event.to }] : []
     ),
@@ -90,4 +89,15 @@ export function renderBrowserTestGameText(
       level: property.level
     }))
   });
+}
+
+function projectPayment(payment: ForcedPayment) {
+  return {
+    paymentId: payment.id,
+    payerId: payment.payerId,
+    receiverId: payment.receiverId,
+    amount: payment.amount,
+    reason: payment.reason,
+    tileId: payment.reason === 'PUBLIC_FEE' ? payment.tileId : null
+  };
 }
