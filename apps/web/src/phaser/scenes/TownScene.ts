@@ -1,5 +1,10 @@
 import Phaser from 'phaser';
-import type { DomainEvent, GameState, PlayerId } from '@bigmoney/game-core';
+import {
+  formatInternalMoney,
+  type DomainEvent,
+  type GameState,
+  type PlayerId
+} from '@bigmoney/game-core';
 import type { PresentationCue } from '@bigmoney/game-flow';
 import {
   getPresentationProfile,
@@ -25,6 +30,7 @@ import {
 } from '../bridges/sceneBridge';
 import {
   getBoardPresentationLayout,
+  type BoardTileTone,
   type BoardPresentationLayout,
   type PropertyPresentationAnchor
 } from '../maps/boardPresentationLayout';
@@ -211,12 +217,13 @@ export class TownScene extends Phaser.Scene {
   }
 
   private drawTiles(layout: BoardPresentationLayout): void {
-    const tones: Record<string, number> = {
+    const tones: Record<BoardTileTone, number> = {
       start: 0xcfe7dd,
       property: 0xf5f0e2,
       event: 0xf5d7ce,
       stock: 0xd5e5f1,
       card: 0xf4e6ae,
+      facility: 0xd8e6cc,
       reserved: 0xd9d8d1,
       finish: 0xc9d8df
     };
@@ -644,16 +651,27 @@ export class TownScene extends Phaser.Scene {
   }
 
   private async playDestination(events: DomainEvent[]): Promise<void> {
-    const rent = events.find((event) => event.type === 'RENT_PAID');
-    if (!rent || rent.type !== 'RENT_PAID') return;
+    const rent = events.find(
+      (event): event is Extract<DomainEvent, { type: 'RENT_PAID' }> =>
+        event.type === 'RENT_PAID'
+    );
+    const publicFee = events.find(
+      (event): event is Extract<DomainEvent, { type: 'PAYMENT_COMPLETED' }> =>
+        event.type === 'PAYMENT_COMPLETED' && event.payment.reason === 'PUBLIC_FEE'
+    );
+    if (!rent && !publicFee) return;
 
-    const payer = this.pawns.get(rent.payerId);
+    const payer = this.pawns.get(rent?.payerId ?? publicFee!.payment.payerId);
     if (!payer) return;
-    const text = this.add.text(payer.x, payer.y - 100, `-${rent.amount * 10}万`, {
+    const amountText = rent
+      ? `-${rent.amount * 10}万`
+      : `公共费用\n-${formatInternalMoney(publicFee!.payment.amount)}`;
+    const text = this.add.text(payer.x, payer.y - 100, amountText, {
       fontFamily: 'Inter, sans-serif',
       fontSize: '22px',
       fontStyle: 'bold',
       color: '#C55353',
+      align: 'center',
       stroke: '#FFFFFF',
       strokeThickness: 5
     }).setOrigin(0.5).setDepth(1100);

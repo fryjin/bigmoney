@@ -74,6 +74,55 @@ describe('browser test state projection', () => {
     });
   });
 
+  it('reads public-fee payment tile identity and completion without mutating state', () => {
+    const game = createLocalGameState(fullMap36Content);
+    game.activePlayerIndex = 1;
+    game.pendingInteraction = {
+      type: 'LIQUIDATION',
+      playerId: 'P2',
+      payment: {
+        id: 'PAYMENT-0002',
+        payerId: 'P2',
+        receiverId: null,
+        amount: 30,
+        reason: 'PUBLIC_FEE',
+        tileId: 'RESERVED_FACILITY_01'
+      }
+    };
+    const before = structuredClone(game);
+    const paymentCompleted = {
+      type: 'PAYMENT_COMPLETED' as const,
+      payment: {
+        id: 'PAYMENT-0003',
+        payerId: 'P2' as const,
+        receiverId: null,
+        amount: 50,
+        reason: 'PUBLIC_FEE' as const,
+        tileId: 'RESERVED_FACILITY_02' as const
+      }
+    };
+    const state = snapshot(game, 'awaitingLiquidation');
+    state.lastEvents = [paymentCompleted];
+
+    expect(JSON.parse(renderBrowserTestGameText(state, false))).toMatchObject({
+      pendingLiquidation: {
+        paymentId: 'PAYMENT-0002',
+        receiverId: null,
+        amount: 30,
+        reason: 'PUBLIC_FEE',
+        tileId: 'RESERVED_FACILITY_01'
+      },
+      completedPayments: [{
+        paymentId: 'PAYMENT-0003',
+        receiverId: null,
+        amount: 50,
+        reason: 'PUBLIC_FEE',
+        tileId: 'RESERVED_FACILITY_02'
+      }]
+    });
+    expect(game).toEqual(before);
+  });
+
   it('redacts private player and asset data during handoff', () => {
     const game = createLocalGameState(fullMap36Content);
     game.players[0]!.cards.push({ instanceId: 'CARD-0001', cardId: 'CARD_REROLL' });

@@ -51,6 +51,7 @@ function getTileTone(type: typeof fullMap36Content.tiles[number]['type']): Board
   if (type === 'EVENT') return 'event';
   if (type === 'STOCK') return 'stock';
   if (type === 'CARD') return 'card';
+  if (type === 'FACILITY') return 'facility';
   if (type === 'RESERVED') return 'reserved';
   return 'finish';
 }

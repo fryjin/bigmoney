@@ -23,10 +23,19 @@ export type BrowserTestFixtureName =
   | 'lap-wrap'
   | 'multi-step-wrap'
   | 'reserved-jail'
-  | 'reserved-facility-01'
   | 'reserved-project'
-  | 'reserved-facility-02'
   | 'reserved-minigame'
+  | 'facility-direct-14'
+  | 'facility-direct-25'
+  | 'facility-pass-through-14'
+  | 'facility-exact-fee-14'
+  | 'facility-liquidation-14'
+  | 'facility-bankruptcy-handoff-14'
+  | 'facility-bankruptcy-finished-14'
+  | 'facility-stable-14'
+  | 'facility-stable-25'
+  | 'facility-direct-14-3p'
+  | 'facility-direct-14-4p'
   | 'property-purchase'
   | 'property-upgrade'
   | 'property-rent'
@@ -78,10 +87,19 @@ const FIXTURE_NAMES: readonly BrowserTestFixtureName[] = [
   'lap-wrap',
   'multi-step-wrap',
   'reserved-jail',
-  'reserved-facility-01',
   'reserved-project',
-  'reserved-facility-02',
   'reserved-minigame',
+  'facility-direct-14',
+  'facility-direct-25',
+  'facility-pass-through-14',
+  'facility-exact-fee-14',
+  'facility-liquidation-14',
+  'facility-bankruptcy-handoff-14',
+  'facility-bankruptcy-finished-14',
+  'facility-stable-14',
+  'facility-stable-25',
+  'facility-direct-14-3p',
+  'facility-direct-14-4p',
   'property-purchase',
   'property-upgrade',
   'property-rent',
@@ -133,14 +151,60 @@ export function getBrowserTestFixture(
       return createPositionFixture(fixtureName, 34, MULTI_STEP_RANDOM);
     case 'reserved-jail':
       return createPositionFixture(fixtureName, 8);
-    case 'reserved-facility-01':
-      return createPositionFixture(fixtureName, 13);
     case 'reserved-project':
       return createPositionFixture(fixtureName, 17);
-    case 'reserved-facility-02':
-      return createPositionFixture(fixtureName, 24);
     case 'reserved-minigame':
       return createPositionFixture(fixtureName, 26);
+    case 'facility-direct-14':
+      return createFacilityFixture(fixtureName, { position: 13, cash: 100 });
+    case 'facility-direct-25':
+      return createFacilityFixture(fixtureName, { position: 24, cash: 100 });
+    case 'facility-pass-through-14':
+      return createFacilityFixture(fixtureName, {
+        position: 13,
+        cash: 100,
+        random: { algorithm: 'xorshift32', state: 2688 }
+      });
+    case 'facility-exact-fee-14':
+      return createFacilityFixture(fixtureName, { position: 13, cash: 30 });
+    case 'facility-liquidation-14':
+      return createFacilityFixture(fixtureName, {
+        position: 13,
+        cash: 20,
+        propertyIds: ['HARBOR_03']
+      });
+    case 'facility-bankruptcy-handoff-14':
+      return createFacilityFixture(fixtureName, {
+        playerCount: 3,
+        activePlayerIndex: 1,
+        position: 13,
+        cash: 0,
+        propertyIds: ['HARBOR_01']
+      });
+    case 'facility-bankruptcy-finished-14':
+      return createFacilityFixture(fixtureName, {
+        playerCount: 2,
+        activePlayerIndex: 1,
+        position: 13,
+        cash: 0,
+        propertyIds: ['HARBOR_01']
+      });
+    case 'facility-stable-14':
+      return createFacilityFixture(fixtureName, { position: 14, cash: 100 });
+    case 'facility-stable-25':
+      return createFacilityFixture(fixtureName, { position: 25, cash: 100 });
+    case 'facility-direct-14-3p':
+      return createFacilityFixture(fixtureName, {
+        playerCount: 3,
+        position: 13,
+        cash: 100
+      });
+    case 'facility-direct-14-4p':
+      return createFacilityFixture(fixtureName, {
+        playerCount: 4,
+        position: 13,
+        cash: 100
+      });
     case 'property-purchase':
       return createPositionFixture(fixtureName, 0);
     case 'property-upgrade':
@@ -255,6 +319,34 @@ function createPresentationFixture(): BrowserTestFixture {
   });
 }
 
+type FacilityFixtureName = Extract<BrowserTestFixtureName, `facility-${string}`>;
+
+interface FacilityFixtureOptions {
+  playerCount?: LocalPlayerCount;
+  activePlayerIndex?: number;
+  position: number;
+  cash: number;
+  propertyIds?: readonly string[];
+  random?: RandomSnapshot;
+}
+
+function createFacilityFixture(
+  name: FacilityFixtureName,
+  options: FacilityFixtureOptions
+): BrowserTestFixture {
+  const playerCount = options.playerCount ?? 2;
+  const activePlayerIndex = options.activePlayerIndex ?? 0;
+  return createFixture(name, playerCount, (game) => {
+    const player = game.players[activePlayerIndex]!;
+    game.activePlayerIndex = activePlayerIndex;
+    player.position = options.position;
+    player.cash = options.cash;
+    for (const propertyId of options.propertyIds ?? []) {
+      game.properties[propertyId]!.ownerId = player.id;
+    }
+  }, options.random);
+}
+
 function createPositionFixture(
   name: Exclude<
     BrowserTestFixtureName,
@@ -271,6 +363,7 @@ function createPositionFixture(
     | 'four-player-presentation'
     | 'property-upgrade'
     | 'property-rent'
+    | FacilityFixtureName
   >,
   position: number,
   random: RandomSnapshot = FIXTURE_RANDOM

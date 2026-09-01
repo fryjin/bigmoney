@@ -23,10 +23,19 @@ describe('browser test fixtures', () => {
     'lap-wrap',
     'multi-step-wrap',
     'reserved-jail',
-    'reserved-facility-01',
     'reserved-project',
-    'reserved-facility-02',
     'reserved-minigame',
+    'facility-direct-14',
+    'facility-direct-25',
+    'facility-pass-through-14',
+    'facility-exact-fee-14',
+    'facility-liquidation-14',
+    'facility-bankruptcy-handoff-14',
+    'facility-bankruptcy-finished-14',
+    'facility-stable-14',
+    'facility-stable-25',
+    'facility-direct-14-3p',
+    'facility-direct-14-4p',
     'property-purchase',
     'property-upgrade',
     'property-rent',
@@ -117,5 +126,26 @@ describe('browser test fixtures', () => {
         'three-player-bankruptcy-handoff'
       )
     ).toBeNull();
+  });
+
+  it('whitelists legal deterministic facility-entry states without pre-resolving payment', () => {
+    const direct = getBrowserTestFixture('browser-test', 'facility-direct-14');
+    const liquidation = getBrowserTestFixture('browser-test', 'facility-liquidation-14');
+    const bankruptcy = getBrowserTestFixture('browser-test', 'facility-bankruptcy-handoff-14');
+
+    expect(direct?.flow).toBe('turnReady');
+    expect(direct?.game.pendingInteraction).toBeNull();
+    expect(direct?.game.players[0]).toMatchObject({ id: 'P1', cash: 100, position: 13 });
+    expect(direct?.random).toEqual({ algorithm: 'xorshift32', state: 1 });
+
+    expect(liquidation?.flow).toBe('turnReady');
+    expect(liquidation?.game.pendingInteraction).toBeNull();
+    expect(liquidation?.game.players[0]).toMatchObject({ id: 'P1', cash: 20, position: 13 });
+    expect(liquidation?.game.properties.HARBOR_03).toMatchObject({ ownerId: 'P1', level: 0 });
+
+    expect(bankruptcy?.flow).toBe('turnReady');
+    expect(bankruptcy?.game.pendingInteraction).toBeNull();
+    expect(bankruptcy?.game.players[1]).toMatchObject({ id: 'P2', cash: 0, position: 13 });
+    expect(bankruptcy?.game.properties.HARBOR_01).toMatchObject({ ownerId: 'P2', level: 0 });
   });
 });

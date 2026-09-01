@@ -453,8 +453,10 @@ export class LocalGameSession {
       return;
     }
 
-    const hasDestinationPresentation = result.events.some((event) =>
-      ['RENT_PAID'].includes(event.type)
+    const hasDestinationPresentation = result.events.some(
+      (event) =>
+        event.type === 'RENT_PAID' ||
+        (event.type === 'PAYMENT_COMPLETED' && event.payment.reason === 'PUBLIC_FEE')
     );
 
     if (hasDestinationPresentation) {
